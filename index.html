@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Escrow dApp | TangemGaslessDynamicEscrow</title>
   <link rel="stylesheet" href="style.css">
-  <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js" type="text/javascript"></script>
+  
+  <!-- Исправленные надежные CDN библиотеки -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -14,8 +17,22 @@
         <h1>Tangem Gasless Escrow Panel</h1>
         <p class="subtitle">Сеть TRON Shasta | Контракт: 0x708afe235a9b4e7616dbdb0e74c7d239b1a130f2</p>
       </div>
-      <button id="connectWalletBtn" class="btn primary">Подключить кошелек</button>
+      <div class="header-buttons">
+        <button id="showQrBtn" class="btn secondary">QR-код подключения</button>
+        <button id="connectWalletBtn" class="btn primary">Подключить кошелек</button>
+      </div>
     </header>
+
+    <!-- Модальное окно / карточка с QR-кодом -->
+    <div id="qrModal" class="modal hidden">
+      <div class="modal-content card">
+        <span id="closeQrBtn" class="close-btn">&times;</span>
+        <h2>QR-код для подключения кошелька</h2>
+        <p class="hint">Отсканируйте через мобильное приложение (Tangem / WalletConnect / TronLink):</p>
+        <div id="qrcode" class="qr-container"></div>
+        <p id="qrAddressText" class="qr-address"></p>
+      </div>
+    </div>
 
     <div class="card wallet-info">
       <p><strong>Адрес кошелька:</strong> <span id="userAddress">Не подключен</span></p>
