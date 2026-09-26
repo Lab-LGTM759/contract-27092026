@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Institutional Escrow Portal / Институциональный эскроу-портал</title>
+    <link rel="stylesheet" href="style_2.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/tronweb/dist/TronWeb.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Institutional Escrow Panel / Панель Эскроу (3-of-3 Multi-Sig)</h1>
+
+        <!-- Настройка смарт-контракта -->
+        <div class="card" style="border: 1px solid var(--accent-color);">
+            <h2>Smart Contract Target / Адрес смарт-контракта</h2>
+            <div class="input-group">
+                <label for="contractAddressInput">Адрес смарт-контракта (Base58 / 0x Hex):</label>
+                <div class="input-row">
+                    <input type="text" id="contractAddressInput" placeholder="T... или 0x..." value="0xYOUR_DEPLOYED_CONTRACT_ADDRESS_HERE" />
+                    <button id="btnSaveContract" class="btn secondary" style="min-width: 120px; flex: 0;">Сохранить</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Комплаенс и часы -->
+        <div class="card">
+            <h2>Compliance & System Time / Комплаенс и время Лондона (GMT/BST)</h2>
+            <div class="info-grid">
+                <div>
+                    <label>Current London Time / Время Лондона:</label>
+                    <div id="londonClock" class="time-display">--:--:-- GMT/BST</div>
+                </div>
+                <div>
+                    <label>Contract Status / Статус контракта:</label>
+                    <div id="pauseStatusDisplay" class="status-badge">Загрузка...</div>
+                </div>
+            </div>
+            <div class="info-grid" style="margin-top: 10px;">
+                <div style="grid-column: span 2;">
+                    <label>Legal & AML Document Hash / Хэш документов:</label>
+                    <div id="amlDocHashDisplay" class="hash-code">Подключите кошелек...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Контроль депозита и таймер 5 суток -->
+        <div class="card" style="border: 1px solid #3b82f6;">
+            <h2>Receiver Deposit & 5-Day Escrow Timer / Депозит Приемки и Таймер 5 суток</h2>
+            <div class="info-grid">
+                <div>
+                    <label>Статус депозита Приемки:</label>
+                    <div id="depositLockStatus" class="status-badge" style="color: #ef4444;">НЕ ВНЕСЕН / NOT LOCKED</div>
+                </div>
+                <div>
+                    <label>Баланс контракта (USDT):</label>
+                    <div id="depositedAmountDisplay" class="time-display" style="color: #38bdf8;">0.00 USDT</div>
+                </div>
+            </div>
+            <div class="info-grid" style="margin-top: 10px;">
+                <div>
+                    <label>Обратный отсчет до Аварийного возврата (5 суток):</label>
+                    <div id="emergencyTimerDisplay" class="time-display" style="color: #f59e0b; font-size: 18px;">--д --ч --м --с</div>
+                </div>
+                <div>
+                    <label>Адрес возврата депозита (Приемка):</label>
+                    <div id="receiverRefundAddress" class="hash-code">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Подключение кошелька -->
+        <div class="card">
+            <h2>1. Connection & Identification / Подключение</h2>
+            <div class="button-group">
+                <button id="btnConnectBrowser" class="btn primary">Connect TronLink / Tangem / Подключить кошелек</button>
+                <button id="btnConnectQR" class="btn secondary">App QR Code / QR-код</button>
+            </div>
+            <p id="walletAddress" class="status-text">Статус: Не подключен</p>
+            <p id="userRoleDisplay" class="role-badge">Роль: Подключите кошелек</p>
+            
+            <!-- Модальное окно QR-кода -->
+            <div id="qrModal" class="modal">
+                <div class="modal-content">
+                    <span id="btnCloseQR" class="close-btn">&times;</span>
+                    <h3 style="color: #0f172a; margin-bottom: 12px; font-size: 16px;">Scan with Wallet App / Отсканируйте кошельком</h3>
+                    <div id="qrcode"></div>
+                    <p style="color: #64748b; font-size: 11px; margin-top: 12px;">Откройте встроенный dApp-браузер Tangem или TronLink и отсканируйте этот код.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Генерация подписей -->
+        <div class="card">
+            <h2>2. Signature Generation & Entry (EIP-191) / Генерация 3 подписей</h2>
+            
+            <div class="sig-box">
+                <h3>Investor / Инвестор (Party A)</h3>
+                <div class="button-group">
+                    <button id="btnSignInvestor" class="btn">1. Generate Investor Signature</button>
+                </div>
+                <div class="input-group">
+                    <div class="input-row">
+                        <input type="text" id="timeA" placeholder="London Epoch Time" readonly>
+                        <input type="text" id="sigA" placeholder="Investor Signature Hash" readonly>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sig-box">
+                <h3>Receiver / Приемка (Party B)</h3>
+                <div class="button-group">
+                    <button id="btnSignOperator" class="btn">2. Generate Receiver Signature</button>
+                </div>
+                <div class="input-group">
+                    <div class="input-row">
+                        <input type="text" id="timeB" placeholder="London Epoch Time" readonly>
+                        <input type="text" id="sigB" placeholder="Receiver Signature Hash" readonly>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sig-box">
+                <h3>Oracle Coordinator / Оракул</h3>
+                <div class="button-group">
+                    <button id="btnSignOracle" class="btn">3. Generate Oracle Signature</button>
+                </div>
+                <div class="input-group">
+                    <div class="input-row">
+                        <input type="text" id="timeOracle" placeholder="London Epoch Time" readonly>
+                        <input type="text" id="sigOracle" placeholder="Oracle Signature Hash" readonly>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Исполнение -->
+        <div class="card coordinator-panel">
+            <h2>3. Execution Panel / Панель исполнения смарт-контракта</h2>
+            <div class="button-group">
+                <button id="btnExecuteStage2" class="btn success">Execute Stage 2 Payouts / Исполнить выплаты</button>
+                <button id="btnTimeoutRefund" class="btn secondary">Emergency Refund (5 Days) / Аварийный возврат Приемке</button>
+            </div>
+            <p id="txStatus" class="status-text"></p>
+        </div>
+
+        <!-- Смена адресов -->
+        <div class="card">
+            <h2>4. Payee Wallets Management (3-of-3) / Управление кошельками</h2>
+            <div class="input-group">
+                <label>0. Investor / Инвестор (5.00% / 500 BPS):</label>
+                <input type="text" id="payee0" placeholder="T..." />
+            </div>
+            <div class="input-group">
+                <label>1. Oracle / Оракул (3.50% / 350 BPS):</label>
+                <input type="text" id="payee1" placeholder="T..." />
+            </div>
+            <div class="input-group">
+                <label>2. Participant #1 / Участник №1 (1.50% / 150 BPS):</label>
+                <input type="text" id="payee2" placeholder="T..." />
+            </div>
+            <div class="input-group">
+                <label>3. Participant #2 / Участник №2 (1.00% / 100 BPS):</label>
+                <input type="text" id="payee3" placeholder="T..." />
+            </div>
+            <div class="button-group" style="margin-top: 15px;">
+                <button id="btnUpdateWallets" class="btn secondary">Update Payee Wallets / Обновить кошельки</button>
+            </div>
+        </div>
+
+        <!-- Аудиторский реестр событий и транзакций -->
+        <div class="card">
+            <h2>5. Audit Event & Payout Trail / Аудиторский реестр всех вызовов</h2>
+            <p class="subtitle">Фиксирует ВСЕ попытки взаимодействия со смарт-контрактом (включая отклоненные FAILED/REVERT).</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Действие / Метод</th>
+                        <th>Статус выполнения</th>
+                        <th>Хэш транзакции</th>
+                        <th>Время Лондона (GMT/BST)</th>
+                    </tr>
+                </thead>
+                <tbody id="registryBody">
+                    <tr><td colspan="5" style="text-align:center;">Загрузка истории транзакций...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script src="app_2.js"></script>
+</body>
+</html>
