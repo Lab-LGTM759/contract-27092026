@@ -1,303 +1,234 @@
-let userAddress = null;
-let tronWebInstance = null;
+// Адрес задеплоенного контракта в сети TRON Shasta (EVM Hex формат для ethers.js)
+const CONTRACT_ADDRESS = "0x708afe235a9b4e7616dbdb0e74c7d239b1a130f2";
 
-const CONTRACT_ADDRESS = "TWXhdWcnyhJMqu1vSbNwiH3g5SVb7zasYV"; // Ваш актуальный адрес смарт-контракта
-// Корректный адрес тестового USDT-токена в сети Tron Shasta (в формате Base58)
-const USDT_CONTRACT_ADDRESS = "TG3XXyJMiPmTCtFwytabCW9uPjHhE9M6eY"; 
-const CHAIN_ID = 728126428;
-const EXPECTED_BPS = [500, 175, 175, 150, 100]; // 5 получателей (в сумме 1100 BPS / 11.00%)
+const CONTRACT_ABI = [
+  "function investor() view returns (address)",
+  "function receiver() view returns (address)",
+  "function oracle() view returns (address)",
+  "function chainId() view returns (uint256)",
+  "function nonce() view returns (uint256)",
+  "function isDepositLocked() view returns (bool)",
+  "function isStage1Completed() view returns (bool)",
+  "function isStage2Activated() view returns (bool)",
+  "function isPaused() view returns (bool)",
+  "function fixedEurUsdtRate() view returns (uint256)",
+  "function REQUIRED_USDT_DEPOSIT() view returns (uint256)",
+  "function REQUIRED_TRX_GAS() view returns (uint256)",
+  "function depositAndLock(uint256 usdtAmount) payable",
+  "function signStage1(bytes32 investorPassport, bytes32 receiverPassport, bytes32 oracleCode, uint256 timeA, uint256 timeB, uint256 timeOracle, bytes sigA, bytes sigB, bytes sigOracle)",
+  "function executeStage2AndDistribute(uint256 timeA, uint256 timeB, uint256 timeOracle, bytes sigA, bytes sigB, bytes sigOracle)",
+  "function withdrawAfterLockTimeout()",
+  "function emergencyRefundAfterTimeout()"
+];
 
-// Автоматический запуск при загрузке DOM
-document.addEventListener('DOMContentLoaded', () => {
-    updateLondonClock();
-    setInterval(updateLondonClock, 1000);
-    initUIEvents();
+let provider;
+let signer;
+let contract;
+let userAddress;
+
+window.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("connectWalletBtn").addEventListener("click", connectWallet);
+  document.getElementById("depositBtn").addEventListener("click", depositAndLock);
+  document.getElementById("signStage1MsgBtn").addEventListener("click", signStage1Local);
+  document.getElementById("execStage1Btn").addEventListener("click", executeStage1);
+  document.getElementById("signStage2MsgBtn").addEventListener("click", signStage2Local);
+  document.getElementById("execStage2Btn").addEventListener("click", executeStage2);
+  document.getElementById("withdrawLockTimeoutBtn").addEventListener("click", withdrawAfterLockTimeout);
+  document.getElementById("emergencyRefundBtn").addEventListener("click", emergencyRefund);
 });
 
-// 1. Отображение времени Лондона (GMT/BST)
-function updateLondonClock() {
-    const clockElem = document.getElementById('londonClock');
-    if (!clockElem) return;
-    const options = { 
-        timeZone: 'Europe/London', 
-        year: 'numeric', 
-        month: '2-digit', 
-        day: '2-digit', 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        second: '2-digit', 
-        hour12: false 
-    };
-    clockElem.innerText = new Intl.DateTimeFormat('en-GB', options).format(new Date()) + " (London GMT/BST)";
-}
-
-// 2. Инициализация обработчиков событий
-function initUIEvents() {
-    const btnConnect = document.getElementById('btnConnectBrowser');
-    if (btnConnect) btnConnect.addEventListener('click', connectWallet);
-
-    const qrModal = document.getElementById('qrModal');
-    const btnConnectQR = document.getElementById('btnConnectQR');
-    const btnCloseQR = document.getElementById('btnCloseQR');
-
-    if (btnConnectQR && qrModal) {
-        btnConnectQR.addEventListener('click', () => {
-            const qrContainer = document.getElementById('qrcode');
-            if (qrContainer) {
-                qrContainer.innerHTML = ""; 
-                new QRCode(qrContainer, {
-                    text: window.location.href,
-                    width: 200,
-                    height: 200,
-                    colorDark: "#0f172a",
-                    colorLight: "#ffffff",
-                    correctLevel: QRCode.CorrectLevel.H
-                });
-            }
-            qrModal.style.display = "flex";
-        });
-    }
-
-    if (btnCloseQR && qrModal) {
-        btnCloseQR.addEventListener('click', () => { qrModal.style.display = "none"; });
-    }
-
-    window.addEventListener('click', (event) => {
-        if (qrModal && event.target === qrModal) qrModal.style.display = "none";
-    });
-
-    const btnSignInv = document.getElementById('btnSignInvestor');
-    if (btnSignInv) btnSignInv.addEventListener('click', () => generateSignature('timeA', 'sigA'));
-
-    const btnSignOp = document.getElementById('btnSignOperator');
-    if (btnSignOp) btnSignOp.addEventListener('click', () => generateSignature('timeB', 'sigB'));
-
-    const btnSignOra = document.getElementById('btnSignOracle');
-    if (btnSignOra) btnSignOra.addEventListener('click', () => generateSignature('timeOracle', 'sigOracle'));
-
-    const btnExecute = document.getElementById('btnExecuteStage2');
-    if (btnExecute) btnExecute.addEventListener('click', executeStage2Payouts);
-
-    const btnRefund = document.getElementById('btnTimeoutRefund');
-    if (btnRefund) btnRefund.addEventListener('click', executeEmergencyRefund);
-
-    const btnUpdate = document.getElementById('btnUpdateWallets');
-    if (btnUpdate) btnUpdate.addEventListener('click', updatePayeeWallets);
-}
-
-// 3. Логика подключения кошелька TronLink / Tangem
 async function connectWallet() {
-    try {
-        const provider = window.tron || window.tronLink;
-        
-        if (!provider) {
-            alert("Кошелек TronLink не найден! Убедитесь, что расширение установлено и включено.");
-            return;
-        }
+  if (!window.ethereum) return alert("Пожалуйста, установите MetaMask или TronLink Web3 Провайдер!");
 
-        try {
-            await provider.request({ method: 'tron_requestAccounts' });
-        } catch (reqErr) {
-            console.warn("Запрос авторизации отправлен в TronLink:", reqErr);
-        }
+  try {
+    provider = new ethers.providers.Web3Provider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    signer = provider.getSigner();
+    userAddress = await signer.getAddress();
 
-        let attempts = 0;
-        while ((!window.tronWeb || !window.tronWeb.ready || !window.tronWeb.defaultAddress.base58) && attempts < 10) {
-            await new Promise(resolve => setTimeout(resolve, 300));
-            attempts++;
-        }
+    document.getElementById("userAddress").innerText = userAddress;
+    
+    const network = await provider.getNetwork();
+    document.getElementById("networkChainId").innerText = network.chainId;
 
-        if (window.tronWeb && window.tronWeb.ready && window.tronWeb.defaultAddress.base58) {
-            tronWebInstance = window.tronWeb;
-            userAddress = tronWebInstance.defaultAddress.base58;
-            
-            const walletLabel = document.getElementById('walletAddress');
-            if (walletLabel) {
-                walletLabel.innerText = "Подключен кошелек: " + userAddress;
-            }
-            
-            await loadContractDataSafely();
-        } else {
-            alert("Кошелек TronLink заблокирован или не ответил. Нажмите на иконку TronLink в браузере, введите пароль и повторите попытку.");
-        }
-    } catch (err) {
-        console.error("Ошибка подключения:", err);
-        alert("Не удалось подключить кошелек: " + (err.message || err));
-    }
+    contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+    await updateContractState();
+  } catch (err) {
+    console.error(err);
+    alert("Ошибка подключения кошелька: " + err.message);
+  }
 }
 
-// 4. Безопасное считывание состояния смарт-контракта
-async function loadContractDataSafely() {
-    try {
-        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
-        
-        try {
-            const legalHash = await contract.amlAndLegalDocHash().call();
-            const amlElem = document.getElementById('amlDocHashDisplay');
-            if (amlElem) amlElem.innerText = legalHash;
-        } catch (e) {
-            console.warn("Не удалось загрузить хэш документов:", e);
-        }
+async function updateContractState() {
+  if (!contract) return;
+  
+  try {
+    const nonce = await contract.nonce();
+    const isLocked = await contract.isDepositLocked();
+    const isStage1 = await contract.isStage1Completed();
+    const isStage2 = await contract.isStage2Activated();
 
-        try {
-            const isPaused = await contract.isPaused().call();
-            const pauseElem = document.getElementById('pauseStatusDisplay');
-            if (pauseElem) {
-                pauseElem.innerText = isPaused ? "ЗАМОРОЖЕН / FROZEN" : "АКТИВЕН / ACTIVE";
-                pauseElem.style.color = isPaused ? "#ef4444" : "#10b981";
-            }
-        } catch (e) {
-            console.warn("Не удалось загрузить статус заморозки:", e);
-        }
-
-        await loadDepositAndTimerData();
-        await loadCurrentPayees();
-        await loadFullAuditTrailWithFailures();
-    } catch (err) {
-        console.error("Ошибка загрузки данных контракта:", err);
-    }
+    document.getElementById("contractNonce").innerText = nonce.toString();
+    document.getElementById("statusDeposit").innerText = isLocked ? "Да" : "Нет";
+    document.getElementById("statusStage1").innerText = isStage1 ? "Пройден" : "Нет";
+    document.getElementById("statusStage2").innerText = isStage2 ? "Активирован" : "Нет";
+  } catch (err) {
+    console.error("Ошибка чтения состояния контракта:", err);
+  }
 }
 
-// 5. Загрузка данных депозита и баланса USDT
-async function loadDepositAndTimerData() {
-    try {
-        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
-        const isLocked = await contract.isDepositLocked().call();
-        const depositElem = document.getElementById('depositLockStatus');
-        if (depositElem) {
-            depositElem.innerText = isLocked ? "ВНЕСЕН И ЗАБЛОКИРОВАН / LOCKED" : "ОЖИДАЕТ ВНОСА / PENDING";
-            depositElem.style.color = isLocked ? "#10b981" : "#f59e0b";
-        }
+async function depositAndLock() {
+  try {
+    const usdtAmount = document.getElementById("usdtDepositInput").value;
+    const trxAmount = document.getElementById("trxDepositInput").value;
 
-        // Используем корректный адрес USDT в сети Tron вместо EVM-адреса
-        const usdtContract = await tronWebInstance.contract().at(USDT_CONTRACT_ADDRESS);
-        const rawBalance = await usdtContract.balanceOf(CONTRACT_ADDRESS).call();
-        const balanceElem = document.getElementById('depositedAmountDisplay');
-        if (balanceElem) balanceElem.innerText = `${(Number(rawBalance) / 1e6).toLocaleString()} USDT`;
-    } catch (err) {
-        console.error("Ошибка депозита:", err);
-    }
+    const tx = await contract.depositAndLock(usdtAmount, { value: trxAmount });
+    await tx.wait();
+    alert("Депозит (USDT + 2,000 TRX) успешно внесен и заблокирован!");
+    await updateContractState();
+  } catch (err) {
+    console.error(err);
+    alert("Ошибка пополнения депозита: " + err.message);
+  }
 }
 
-// 6. Загрузка адресов 5 получателей
-async function loadCurrentPayees() {
-    try {
-        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
-        for (let i = 0; i < 5; i++) {
-            const payee = await contract.payees(i).call();
-            const inputElem = document.getElementById(`payee${i}`);
-            if (inputElem && payee.wallet) {
-                inputElem.value = tronWebInstance.address.fromHex(payee.wallet);
-            }
-        }
-    } catch (err) { 
-        console.error("Ошибка адресов:", err); 
+// Локальная генерация подписи для текущего подключенного кошелька (Stage 1)
+async function signStage1Local() {
+  try {
+    const chainId = await contract.chainId();
+    const nonce = await contract.nonce();
+    const roleTag = document.getElementById("stage1RoleSelect").value;
+    const passportHash = document.getElementById("passportHashInput").value;
+    
+    if (!passportHash || passportHash.length !== 66) {
+      return alert("Введите корректный bytes32 хэш (0x... 64 символа)");
     }
+
+    const timestamp = Math.floor(Date.now() / 1000);
+
+    const messageHash = ethers.utils.solidityKeccak256(
+      ["address", "uint256", "string", "bytes32", "uint256", "uint256"],
+      [CONTRACT_ADDRESS, chainId, roleTag, passportHash, timestamp, nonce]
+    );
+
+    const signature = await signer.signMessage(ethers.utils.arrayify(messageHash));
+    
+    document.getElementById("generatedSigOutput").value = JSON.stringify({
+      role: roleTag,
+      timestamp: timestamp,
+      signature: signature
+    }, null, 2);
+
+    alert(`Подпись для ${roleTag} успешно создана!`);
+  } catch (err) {
+    console.error(err);
+    alert("Ошибка генерации подписи Stage 1: " + err.message);
+  }
 }
 
-// 7. Аудиторский реестр транзакций из Shasta TronGrid API
-async function loadFullAuditTrailWithFailures() {
-    const tbody = document.getElementById("registryBody");
-    if (!tbody || !tronWebInstance) return;
+// Исполнение Stage 1 передачей 3 собранных подписей
+async function executeStage1() {
+  try {
+    const invPass = document.getElementById("investorPassportInput").value;
+    const recPass = document.getElementById("receiverPassportInput").value;
+    const oracleCode = document.getElementById("oracleCodeInput").value;
 
-    try {
-        const base58Contract = tronWebInstance.address.fromHex(CONTRACT_ADDRESS);
-        const response = await fetch(`https://apilist.shasta.trongrid.io/api/transaction?sort=-timestamp&limit=25&contract=${base58Contract}`);
-        const data = await response.json();
+    const timeA = document.getElementById("timeA_Input").value;
+    const timeB = document.getElementById("timeB_Input").value;
+    const timeOracle = document.getElementById("timeOracle_Input").value;
 
-        if (data && data.data && data.data.length > 0) {
-            tbody.innerHTML = "";
-            data.data.forEach((tx, idx) => {
-                const isSuccess = tx.result === "SUCCESS" || tx.contractRet === "SUCCESS";
-                const statusHtml = isSuccess
-                    ? `<span style="color:#10b981; font-weight:bold;">УСПЕШНО / SUCCESS</span>`
-                    : `<span style="color:#ef4444; font-weight:bold;">ОТКЛОНЕНО / FAILED</span>`;
+    const sigA = document.getElementById("sigA_Input").value.trim();
+    const sigB = document.getElementById("sigB_Input").value.trim();
+    const sigOracle = document.getElementById("sigOracle_Input").value.trim();
 
-                tbody.innerHTML += `<tr>
-                    <td>${idx + 1}</td>
-                    <td><strong>${tx.methodName || 'Вызов контракта'}</strong></td>
-                    <td>${statusHtml}</td>
-                    <td class="hash-code"><a href="https://shasta.tronscan.org/#/transaction/${tx.hash}" target="_blank" style="color:#60a5fa;">${tx.hash.substring(0, 12)}...</a></td>
-                    <td>${new Date(tx.timestamp).toLocaleTimeString()}</td>
-                </tr>`;
-            });
-        }
-    } catch (err) { 
-        console.error("Ошибка аудита:", err); 
-    }
+    const tx = await contract.signStage1(
+      invPass, recPass, oracleCode,
+      timeA, timeB, timeOracle,
+      sigA, sigB, sigOracle
+    );
+    await tx.wait();
+    
+    alert("Этап 1 успешно выполнен в блокчейне!");
+    await updateContractState();
+  } catch (err) {
+    console.error(err);
+    alert("Ошибка выполнения Stage 1: " + err.message);
+  }
 }
 
-// 8. Генерация криптографической подписи (EIP-191)
-async function generateSignature(timeInputId, sigInputId) {
-    if (!tronWebInstance || !userAddress) {
-        alert("Сначала подключите кошелек!");
-        return;
-    }
-    try {
-        const timestamp = Math.floor(Date.now() / 1000);
-        const message = `London Epoch Time: ${timestamp}`;
-        const signature = await tronWebInstance.trx.signMessageV2(message);
+// Локальная генерация подписи для Stage 2
+async function signStage2Local() {
+  try {
+    const chainId = await contract.chainId();
+    const nonce = await contract.nonce();
+    const roleTag = document.getElementById("stage2RoleSelect").value;
+    const timestamp = Math.floor(Date.now() / 1000);
 
-        document.getElementById(timeInputId).value = timestamp;
-        document.getElementById(sigInputId).value = signature;
-    } catch (err) {
-        console.error("Ошибка подписи:", err);
-        alert("Ошибка при создании подписи: " + (err.message || err));
-    }
+    const messageHash = ethers.utils.solidityKeccak256(
+      ["address", "uint256", "string", "uint256", "uint256"],
+      [CONTRACT_ADDRESS, chainId, roleTag, timestamp, nonce]
+    );
+
+    const signature = await signer.signMessage(ethers.utils.arrayify(messageHash));
+
+    document.getElementById("generatedStage2SigOutput").value = JSON.stringify({
+      role: roleTag,
+      timestamp: timestamp,
+      signature: signature
+    }, null, 2);
+
+    alert(`Подпись Stage 2 для ${roleTag} сформирована!`);
+  } catch (err) {
+    console.error(err);
+    alert("Ошибка подписи Stage 2: " + err.message);
+  }
 }
 
-// 9. Исполнение Stage 2 выплат
-async function executeStage2Payouts() {
-    if (!tronWebInstance) return alert("Подключите кошелек!");
-    const tA = document.getElementById('timeA').value;
-    const sA = document.getElementById('sigA').value;
-    const tB = document.getElementById('timeB').value;
-    const sB = document.getElementById('sigB').value;
-    const tO = document.getElementById('timeOracle').value;
-    const sO = document.getElementById('sigOracle').value;
+// Исполнение Stage 2 и распределение комиссий
+async function executeStage2() {
+  try {
+    const timeA = document.getElementById("s2_timeA_Input").value;
+    const timeB = document.getElementById("s2_timeB_Input").value;
+    const timeOracle = document.getElementById("s2_timeOracle_Input").value;
 
-    if (!sA || !sB || !sO) {
-        return alert("Необходимы подписи всех 3 сторон!");
-    }
+    const sigA = document.getElementById("s2_sigA_Input").value.trim();
+    const sigB = document.getElementById("s2_sigB_Input").value.trim();
+    const sigOracle = document.getElementById("s2_sigOracle_Input").value.trim();
 
-    try {
-        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
-        const tx = await contract.executeStage2(tA, sA, tB, sB, tO, sO).send();
-        document.getElementById('txStatus').innerText = "Транзакция отправлена: " + tx;
-    } catch (err) {
-        console.error("Ошибка исполнения:", err);
-        alert("Ошибка выполнения: " + (err.message || err));
-    }
+    const tx = await contract.executeStage2AndDistribute(
+      timeA, timeB, timeOracle,
+      sigA, sigB, sigOracle
+    );
+    await tx.wait();
+
+    alert("Этап 2 выполнен! Комиссии распределены, остаток депозита возвращен Приемке.");
+    await updateContractState();
+  } catch (err) {
+    console.error(err);
+    alert("Ошибка выполнения Stage 2: " + err.message);
+  }
 }
 
-// 10. Аварийный возврат средств
-async function executeEmergencyRefund() {
-    if (!tronWebInstance) return alert("Подключите кошелек!");
-    try {
-        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
-        const tx = await contract.emergencyTimeoutRefund().send();
-        document.getElementById('txStatus').innerText = "Аварийный возврат запущен: " + tx;
-    } catch (err) {
-        console.error("Ошибка возврата:", err);
-        alert("Ошибка аварийного возврата: " + (err.message || err));
-    }
+async function withdrawAfterLockTimeout() {
+  try {
+    const tx = await contract.withdrawAfterLockTimeout();
+    await tx.wait();
+    alert("Средства успешно выведены по истечении 120 рабочих часов!");
+    await updateContractState();
+  } catch (err) {
+    console.error(err);
+    alert("Ошибка вывода по тайм-ауту: " + err.message);
+  }
 }
 
-// 11. Обновление адресов 5 получателей с долями BPS
-async function updatePayeeWallets() {
-    if (!tronWebInstance) return alert("Подключите кошелек!");
-    try {
-        const payees = [];
-        for (let i = 0; i < 5; i++) {
-            const val = document.getElementById(`payee${i}`).value.trim();
-            if (!val) return alert(`Заполните адрес кошелька #${i}`);
-            payees.push(val);
-        }
-        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
-        const tx = await contract.updatePayeeWallets(payees, EXPECTED_BPS).send();
-        document.getElementById('txStatus').innerText = "Кошельки успешно обновлены: " + tx;
-    } catch (err) {
-        console.error("Ошибка обновления кошельков:", err);
-        alert("Ошибка обновления: " + (err.message || err));
-    }
+async function emergencyRefund() {
+  try {
+    const tx = await contract.emergencyRefundAfterTimeout();
+    await tx.wait();
+    alert("Аварийный возврат средств выполнен!");
+    await updateContractState();
+  } catch (err) {
+    console.error(err);
+    alert("Ошибка аварийного возврата: " + err.message);
+  }
 }
