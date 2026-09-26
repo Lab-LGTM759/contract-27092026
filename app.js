@@ -1,7 +1,9 @@
 let userAddress = null;
 let tronWebInstance = null;
 
-const CONTRACT_ADDRESS = "TWXhdWcnyhJMqu1vSbNwiH3g5SVb7zasYV"; // Обновленный актуальный адрес смарт-контракта
+const CONTRACT_ADDRESS = "TWXhdWcnyhJMqu1vSbNwiH3g5SVb7zasYV"; // Ваш актуальный адрес смарт-контракта
+// Корректный адрес тестового USDT-токена в сети Tron Shasta (в формате Base58)
+const USDT_CONTRACT_ADDRESS = "TG3XXyJMiPmTCtFwytabCW9uPjHhE9M6eY"; 
 const CHAIN_ID = 728126428;
 const EXPECTED_BPS = [500, 175, 175, 150, 100]; // 5 получателей (в сумме 1100 BPS / 11.00%)
 
@@ -129,15 +131,23 @@ async function loadContractDataSafely() {
     try {
         const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
         
-        const legalHash = await contract.amlAndLegalDocHash().call();
-        const amlElem = document.getElementById('amlDocHashDisplay');
-        if (amlElem) amlElem.innerText = legalHash;
+        try {
+            const legalHash = await contract.amlAndLegalDocHash().call();
+            const amlElem = document.getElementById('amlDocHashDisplay');
+            if (amlElem) amlElem.innerText = legalHash;
+        } catch (e) {
+            console.warn("Не удалось загрузить хэш документов:", e);
+        }
 
-        const isPaused = await contract.isPaused().call();
-        const pauseElem = document.getElementById('pauseStatusDisplay');
-        if (pauseElem) {
-            pauseElem.innerText = isPaused ? "ЗАМОРОЖЕН / FROZEN" : "АКТИВЕН / ACTIVE";
-            pauseElem.style.color = isPaused ? "#ef4444" : "#10b981";
+        try {
+            const isPaused = await contract.isPaused().call();
+            const pauseElem = document.getElementById('pauseStatusDisplay');
+            if (pauseElem) {
+                pauseElem.innerText = isPaused ? "ЗАМОРОЖЕН / FROZEN" : "АКТИВЕН / ACTIVE";
+                pauseElem.style.color = isPaused ? "#ef4444" : "#10b981";
+            }
+        } catch (e) {
+            console.warn("Не удалось загрузить статус заморозки:", e);
         }
 
         await loadDepositAndTimerData();
@@ -159,7 +169,8 @@ async function loadDepositAndTimerData() {
             depositElem.style.color = isLocked ? "#10b981" : "#f59e0b";
         }
 
-        const usdtContract = await tronWebInstance.contract().at("0xa614f803b6fd780986a42c78ec9c7f77e6ded13c");
+        // Используем корректный адрес USDT в сети Tron вместо EVM-адреса
+        const usdtContract = await tronWebInstance.contract().at(USDT_CONTRACT_ADDRESS);
         const rawBalance = await usdtContract.balanceOf(CONTRACT_ADDRESS).call();
         const balanceElem = document.getElementById('depositedAmountDisplay');
         if (balanceElem) balanceElem.innerText = `${(Number(rawBalance) / 1e6).toLocaleString()} USDT`;
@@ -283,7 +294,6 @@ async function updatePayeeWallets() {
             payees.push(val);
         }
         const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
-        // Передаем оба массива: адреса и константы долей в BPS
         const tx = await contract.updatePayeeWallets(payees, EXPECTED_BPS).send();
         document.getElementById('txStatus').innerText = "Кошельки успешно обновлены: " + tx;
     } catch (err) {
