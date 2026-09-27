@@ -6,7 +6,7 @@
   <title>Escrow dApp | TangemGaslessDynamicEscrow</title>
   <link rel="stylesheet" href="style.css">
   
-  <!-- CDN библиотеки Ethers.js (для keccak256) и QRCode.js -->
+  <!-- Надежные CDN библиотеки: Ethers.js (для Keccak256) и QRCode.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
@@ -70,7 +70,8 @@
           <label>Депозит TRX на газ (SUN - 2,000 TRX):</label>
           <input type="number" id="trxDepositInput" value="2000000000" readonly>
         </div>
-        <button id="depositBtn" class="btn action-btn">Внести депозит (Приемка)</button>
+        <button id="approveUsdtBtn" class="btn secondary" style="margin-bottom: 10px;">1. Разрешить списание USDT (Approve)</button>
+        <button id="depositBtn" class="btn action-btn">2. Внести депозит (Приемка)</button>
       </section>
 
       <!-- 2.1 Генератор подписи Stage 1 -->
