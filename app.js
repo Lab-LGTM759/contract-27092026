@@ -1,10 +1,10 @@
 // TRON Base58 адрес развернутого контракта в сети Shasta Testnet
-const CONTRACT_ADDRESS_BASE58 = "TLEHBvmyqueaBJErZfe2QWw8qLwKEaEe8A";
+const CONTRACT_ADDRESS_BASE58 = "TLh28MkWcKugTGNUKGRMWCg2NXvixMCARf";
 // EVM Hex эквивалент контракта (используется для генерации keccak256 хэшей подписи)
-const CONTRACT_ADDRESS_HEX = "0x708afe235a9b4e7616dbdb0e74c7d239b1a130f2";
+const CONTRACT_ADDRESS_HEX = "0x7599a6a4e5fd24ee2dd1cb3cc74f1e7f589fc505";
 
-// Адрес контракта USDT TRC-20 в сети Shasta Testnet
-const USDT_CONTRACT_ADDRESS_BASE58 = "TG3XXySZAu2mYsRcuAJHdp25ebdMow5vhR";
+// Адрес развернутого контракта MockUSDT
+const USDT_CONTRACT_ADDRESS_BASE58 = "TDcgpz4UvmHDA9KYnk5ktPFFo1EFXjNnuM";
 const CHAIN_ID = 728126428;
 
 const CONTRACT_ABI = [
