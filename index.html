@@ -3,175 +3,84 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Escrow dApp | TangemGaslessDynamicEscrow</title>
+  <title>Tangem Gasless Escrow Audit & Verification</title>
   <link rel="stylesheet" href="style.css">
-  
-  <!-- CDN библиотеки Ethers.js (для Keccak256) и QRCode.js -->
+  <!-- Подключение Ethers.js для подписей и ecrecover -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
+
   <div class="container">
-    <header class="header">
-      <div>
-        <h1>Tangem Gasless Escrow Panel</h1>
-        <p class="subtitle">Сеть TRON Shasta | Контракт: TLh28MkWcKugTGNUKGRMWCg2NXvixMCARf</p>
-      </div>
-      <div class="header-buttons">
-        <button id="showQrBtn" class="btn secondary">QR-код подключения</button>
-        <button id="connectWalletBtn" class="btn primary">Подключить TronLink</button>
-      </div>
+    <header class="app-header">
+      <h1>Tangem Gasless Escrow Audit Panel</h1>
+      <p class="subtitle">Проверка подписей ecrecover, мониторинг событий TRON и печать PDF-отчета</p>
     </header>
 
-    <!-- Модальное окно с QR-кодом -->
-    <div id="qrModal" class="modal hidden">
-      <div class="modal-content card">
-        <span id="closeQrBtn" class="close-btn">&times;</span>
-        <h2>QR-код привязки кошелька</h2>
-        <p class="hint">Отсканируйте через мобильное приложение (Tangem / TronLink):</p>
-        <div id="qrcode" class="qr-container"></div>
-        <p id="qrAddressText" class="qr-address"></p>
+    <!-- Информационная панель -->
+    <section class="card status-card">
+      <div class="status-item">
+        <span>Статус сети:</span>
+        <strong id="netStatus" class="badge">Инициализация...</strong>
       </div>
-    </div>
+      <div class="status-item">
+        <span>Подключенный адрес:</span>
+        <code id="userAddress">Не подключен</code>
+      </div>
+      <div class="status-item">
+        <span>Смарт-контракт:</span>
+        <code id="contractAddressDisplay">TDcgpz4UvmHDA9KYnk5ktPFFo1EFXjNnuM</code>
+      </div>
+    </section>
 
-    <!-- Информационная карточка кошелька -->
-    <div class="card wallet-info">
-      <p><strong>Подключенный TRON адрес:</strong> <span id="userAddress">Не подключен</span></p>
-      <p><strong>Сеть:</strong> <span id="networkChainId">-</span></p>
-      <p><strong>Текущий Nonce контракта:</strong> <span id="contractNonce">-</span></p>
-    </div>
+    <!-- Поля ввода данных сделки -->
+    <section class="card">
+      <h2>Параметры и подписи сторон (Stage 1)</h2>
+      
+      <div class="form-group">
+        <label for="hashA">Хэш документа Инвестора (Party A):</label>
+        <input type="text" id="hashA" value="0x1122334455667788990011223344556677889900112233445566778899001122">
+      </div>
 
-    <!-- Статус контракта -->
-    <div class="card status-grid">
-      <div class="status-item">
-        <span>Депозит заблокирован:</span>
-        <strong id="statusDeposit">Нет</strong>
+      <div class="form-group">
+        <label for="signatureA">Подпись Инвестора (Party A):</label>
+        <input type="text" id="signatureA" placeholder="0x...">
       </div>
-      <div class="status-item">
-        <span>Этап 1 (Stage 1):</span>
-        <strong id="statusStage1">Не пройден</strong>
+
+      <div class="form-group">
+        <label for="hashB">Хэш документа Получателя (Party B):</label>
+        <input type="text" id="hashB" value="0x2233445566778899001122334455667788990011223344556677889900112233">
       </div>
-      <div class="status-item">
-        <span>Этап 2 (Stage 2):</span>
-        <strong id="statusStage2">Не активирован</strong>
+
+      <div class="form-group">
+        <label for="signatureB">Подпись Получателя (Party B):</label>
+        <input type="text" id="signatureB" placeholder="0x...">
       </div>
-    </div>
+
+      <div class="form-group">
+        <label for="hashOracle">Хэш кода Оракула:</label>
+        <input type="text" id="hashOracle" value="0x3344556677889900112233445566778899001122334455667788990011223344">
+      </div>
+
+      <div class="form-group">
+        <label for="signatureOracle">Подпись Оракула:</label>
+        <input type="text" id="signatureOracle" placeholder="0x...">
+      </div>
+    </section>
 
     <!-- Панель действий -->
-    <main class="grid-actions">
-      <!-- 1. Депозит -->
-      <section class="card">
-        <h2>1. Пополнение и блокировка депозита</h2>
-        <div class="form-group">
-          <label>Сумма USDT (6 decimals - 5,555,000,000 USDT):</label>
-          <input type="number" id="usdtDepositInput" value="5555000000000000" readonly>
-        </div>
-        <div class="form-group">
-          <label>Депозит TRX на газ (SUN - 2,000 TRX):</label>
-          <input type="number" id="trxDepositInput" value="2000000000" readonly>
-        </div>
-        <button id="approveUsdtBtn" class="btn secondary" style="margin-bottom: 10px;">1. Разрешить списание USDT (Approve)</button>
-        <button id="depositBtn" class="btn action-btn">2. Внести депозит (Приемка)</button>
-      </section>
+    <section class="card action-card">
+      <h2>Аудит, Верификация и Отчетность</h2>
+      <p>Проверка подписей через <code>ecrecover</code> и получение подтвержденных логов из блокчейна TRON.</p>
 
-      <!-- 2.1 Генератор подписи Stage 1 -->
-      <section class="card">
-        <h2>2.1 Локальный генератор подписи (Stage 1)</h2>
-        <div class="form-group">
-          <label>Роль подписанта:</label>
-          <select id="stage1RoleSelect" class="input-select">
-            <option value="STAGE_1_INVESTOR">Инвестор (STAGE_1_INVESTOR)</option>
-            <option value="STAGE_1_RECEIVER">Приемка (STAGE_1_RECEIVER)</option>
-            <option value="STAGE_1_ORACLE">Оракул (STAGE_1_ORACLE)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Хэш документа / паспорта / кода (bytes32):</label>
-          <input type="text" id="passportHashInput" placeholder="0x11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff">
-        </div>
-        <button id="signStage1MsgBtn" class="btn secondary">Сформировать подпись роли</button>
-        <div class="form-group margin-top">
-          <label>Результат подписи (JSON):</label>
-          <textarea id="generatedSigOutput" rows="3" readonly></textarea>
-        </div>
-      </section>
-
-      <!-- 2.2 Отправка Stage 1 -->
-      <section class="card full-width">
-        <h2>2.2 Исполнение Этапа 1 в блокчейне (3 из 3)</h2>
-        <div class="grid-3-col">
-          <div class="form-group">
-            <label>Хэш паспорта Инвестора:</label>
-            <input type="text" id="investorPassportInput" placeholder="0x...">
-            <label>Timestamp A:</label>
-            <input type="number" id="timeA_Input" placeholder="Unix timestamp">
-            <label>Подпись A (Investor):</label>
-            <input type="text" id="sigA_Input" placeholder="0x...">
-          </div>
-          <div class="form-group">
-            <label>Хэш паспорта Приемки:</label>
-            <input type="text" id="receiverPassportInput" placeholder="0x...">
-            <label>Timestamp B:</label>
-            <input type="number" id="timeB_Input" placeholder="Unix timestamp">
-            <label>Подпись B (Receiver):</label>
-            <input type="text" id="sigB_Input" placeholder="0x...">
-          </div>
-          <div class="form-group">
-            <label>Хэш кода Оракула:</label>
-            <input type="text" id="oracleCodeInput" placeholder="0x...">
-            <label>Timestamp Oracle:</label>
-            <input type="number" id="timeOracle_Input" placeholder="Unix timestamp">
-            <label>Подпись Oracle:</label>
-            <input type="text" id="sigOracle_Input" placeholder="0x...">
-          </div>
-        </div>
-        <button id="execStage1Btn" class="btn action-btn">Отправить Stage 1 в смарт-контракт</button>
-      </section>
-
-      <!-- 3. Генератор и Исполнение Stage 2 -->
-      <section class="card full-width">
-        <h2>3. Выполнение и распределение комиссий (Stage 2)</h2>
-        <div class="grid-2-col">
-          <div>
-            <h3>Подпись Stage 2</h3>
-            <div class="form-group">
-              <label>Роль подписанта:</label>
-              <select id="stage2RoleSelect" class="input-select">
-                <option value="STAGE_2_INVESTOR">Инвестор (STAGE_2_INVESTOR)</option>
-                <option value="STAGE_2_OPERATOR">Приемка (STAGE_2_OPERATOR)</option>
-                <option value="STAGE_2_ORACLE">Оракул (STAGE_2_ORACLE)</option>
-              </select>
-            </div>
-            <button id="signStage2MsgBtn" class="btn secondary">Подписать Stage 2</button>
-            <div class="form-group margin-top">
-              <textarea id="generatedStage2SigOutput" rows="3" readonly></textarea>
-            </div>
-          </div>
-
-          <div>
-            <h3>Исполнение выплат (3 подписи)</h3>
-            <div class="form-group">
-              <input type="number" id="s2_timeA_Input" placeholder="Timestamp A">
-              <input type="text" id="s2_sigA_Input" placeholder="Подпись A (Investor)">
-              <input type="number" id="s2_timeB_Input" placeholder="Timestamp B">
-              <input type="text" id="s2_sigB_Input" placeholder="Подпись B (Receiver)">
-              <input type="number" id="s2_timeOracle_Input" placeholder="Timestamp Oracle">
-              <input type="text" id="s2_sigOracle_Input" placeholder="Подпись Oracle">
-            </div>
-            <button id="execStage2Btn" class="btn action-btn">Исполнить Stage 2 и выплатить комиссии</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- 4. Возврат средств -->
-      <section class="card full-width">
-        <h2>4. Возврат средств и Тайм-ауты</h2>
-        <div class="grid-2-col">
-          <button id="withdrawLockTimeoutBtn" class="btn warning">Вывод по истечении 120 раб. часов (Receiver)</button>
-          <button id="emergencyRefundBtn" class="btn danger">Аварийный возврат (10 дней)</button>
-        </div>
-      </section>
-    </main>
+      <div class="button-group">
+        <button id="btnExportLogs" class="btn btn-primary">
+          📥 Выгрузить логи в JSON
+        </button>
+        <button id="btnGeneratePdf" class="btn btn-secondary">
+          📄 Сформировать PDF-отчет (с ecrecover)
+        </button>
+      </div>
+    </section>
   </div>
 
   <script src="app.js"></script>
