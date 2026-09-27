@@ -1,88 +1,97 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tangem Gasless Escrow Audit & Verification</title>
-  <link rel="stylesheet" href="style.css">
-  <!-- Подключение Ethers.js для подписей и ecrecover -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tangem Escrow dApp</title>
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- Ethers.js & WalletConnect SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
 </head>
 <body>
+    <div class="app-container">
+        <!-- Шапка dApp -->
+        <header class="app-header">
+            <div class="logo-area">
+                <h2>Tangem Escrow</h2>
+                <span class="badge">Dynamic Gasless Escrow</span>
+            </div>
+            <div class="wallet-area">
+                <span id="networkStatus" class="status-dot offline"></span>
+                <span id="accountAddress">Кошелек не подключен</span>
+                <button id="btnConnect" class="btn-primary">Подключить Tangem / Web3</button>
+            </div>
+        </header>
 
-  <div class="container">
-    <header class="app-header">
-      <h1>Tangem Gasless Escrow Audit Panel</h1>
-      <p class="subtitle">Проверка подписей ecrecover, мониторинг событий TRON и печать PDF-отчета</p>
-    </header>
+        <!-- Главная Панель -->
+        <main class="dashboard-grid">
+            <!-- Карточка: Информация о контракте -->
+            <section class="card overview-card">
+                <h3>Информация о контракте</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>Общий объем договора:</label>
+                        <span id="totalVolume">50,000,000,000 EUR</span>
+                    </div>
+                    <div class="info-item">
+                        <label>Курс EUR/USDT (Oracle):</label>
+                        <span id="oracleRate">Загрузка...</span>
+                    </div>
+                    <div class="info-item">
+                        <label>Статус депозита:</label>
+                        <span id="depositStatus" class="status-badge pending">Ожидает пополнения</span>
+                    </div>
+                    <div class="info-item">
+                        <label>Этап 1 (Stage 1):</label>
+                        <span id="stage1Status" class="status-badge pending">Не пройден</span>
+                    </div>
+                </div>
+            </section>
 
-    <!-- Информационная панель -->
-    <section class="card status-card">
-      <div class="status-item">
-        <span>Статус сети:</span>
-        <strong id="netStatus" class="badge">Инициализация...</strong>
-      </div>
-      <div class="status-item">
-        <span>Подключенный адрес:</span>
-        <code id="userAddress">Не подключен</code>
-      </div>
-      <div class="status-item">
-        <span>Смарт-контракт:</span>
-        <code id="contractAddressDisplay">TDcgpz4UvmHDA9KYnk5ktPFFo1EFXjNnuM</code>
-      </div>
-    </section>
+            <!-- Карточка: Расчет и Депозит (Приемка) -->
+            <section class="card action-card">
+                <h3>Пополнение депозита (Приемка)</h3>
+                <p class="description">
+                    Рассчитано динамически: <strong>11% комиссий + 5% защитный буфер (всего 11.55%)</strong> в USDT по курсу оракула + 2000 TRX на газ. Неиспользованный остаток буфера вернется Приемке.
+                </p>
+                
+                <div class="calculation-box">
+                    <div class="calc-row">
+                        <span>Требуемый USDT депозит:</span>
+                        <strong id="requiredUsdt">0.00 USDT</strong>
+                    </div>
+                    <div class="calc-row">
+                        <span>Требуемый TRX газ:</span>
+                        <strong>2,000 TRX</strong>
+                    </div>
+                </div>
 
-    <!-- Поля ввода данных сделки -->
-    <section class="card">
-      <h2>Параметры и подписи сторон (Stage 1)</h2>
-      
-      <div class="form-group">
-        <label for="hashA">Хэш документа Инвестора (Party A):</label>
-        <input type="text" id="hashA" value="0x1122334455667788990011223344556677889900112233445566778899001122">
-      </div>
+                <div class="button-group">
+                    <button id="btnApprove" class="btn-secondary" disabled>1. Одобрить USDT (Approve)</button>
+                    <button id="btnDeposit" class="btn-action" disabled>2. Внести депозит (Deposit & Lock)</button>
+                </div>
+            </section>
 
-      <div class="form-group">
-        <label for="signatureA">Подпись Инвестора (Party A):</label>
-        <input type="text" id="signatureA" placeholder="0x...">
-      </div>
+            <!-- Карточка: Исполнение Stage 2 -->
+            <section class="card execution-card">
+                <h3>Завершение сделки (Stage 2)</h3>
+                <p class="description">
+                    Автоматический фикс курса и распределение комиссий 5 получателям при наличии подписей сторон.
+                </p>
+                <button id="btnExecuteStage2" class="btn-success" disabled>Выполнить распределение (Stage 2)</button>
+            </section>
+        </main>
 
-      <div class="form-group">
-        <label for="hashB">Хэш документа Получателя (Party B):</label>
-        <input type="text" id="hashB" value="0x2233445566778899001122334455667788990011223344556677889900112233">
-      </div>
+        <!-- Консоль Логов -->
+        <footer class="app-footer">
+            <div id="logConsole" class="log-console">
+                <p class="log-entry system">[Система]: Ожидание подключения кошелька Tangem / TronLink...</p>
+            </div>
+        </footer>
+    </div>
 
-      <div class="form-group">
-        <label for="signatureB">Подпись Получателя (Party B):</label>
-        <input type="text" id="signatureB" placeholder="0x...">
-      </div>
-
-      <div class="form-group">
-        <label for="hashOracle">Хэш кода Оракула:</label>
-        <input type="text" id="hashOracle" value="0x3344556677889900112233445566778899001122334455667788990011223344">
-      </div>
-
-      <div class="form-group">
-        <label for="signatureOracle">Подпись Оракула:</label>
-        <input type="text" id="signatureOracle" placeholder="0x...">
-      </div>
-    </section>
-
-    <!-- Панель действий -->
-    <section class="card action-card">
-      <h2>Аудит, Верификация и Отчетность</h2>
-      <p>Проверка подписей через <code>ecrecover</code> и получение подтвержденных логов из блокчейна TRON.</p>
-
-      <div class="button-group">
-        <button id="btnExportLogs" class="btn btn-primary">
-          📥 Выгрузить логи в JSON
-        </button>
-        <button id="btnGeneratePdf" class="btn btn-secondary">
-          📄 Сформировать PDF-отчет (с ecrecover)
-        </button>
-      </div>
-    </section>
-  </div>
-
-  <script src="app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
