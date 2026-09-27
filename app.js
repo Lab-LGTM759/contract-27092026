@@ -11,10 +11,8 @@ let logCounter = 1;
 function parseTronValue(val) {
   if (val === undefined || val === null) return 0;
   try {
-    // Если результат пришел в виде массива (бывает в TronWeb call)
     if (Array.isArray(val)) val = val[0];
     
-    // Если объект BigNumber или со значением _hex
     if (typeof val === 'object') {
       if (val._hex) return parseInt(val._hex, 16);
       if (val.hex) return parseInt(val.hex, 16);
@@ -130,7 +128,6 @@ async function refreshState() {
     const rateRaw = await escrowContract.fixedEurUsdtRate().call();
     const rateVal = parseTronValue(rateRaw);
     
-    // Если переменная в смарт-контракте равна 1080000 (1.08 с 6 знаками)
     const rateFormatted = rateVal > 0 ? (rateVal / 1e6).toFixed(4) : "1.0800";
     
     const rateEl = document.getElementById('oracleRateDisplay');
@@ -141,45 +138,6 @@ async function refreshState() {
 
   } catch (err) {
     console.error("Ошибка при обновлении состояния:", err);
-  }
-}
-
-// --- Обработчик 1: Approve USDT ---
-async function handleApprove() {
-  if (!usdtContract || !escrowContract) return alert("Сначала подключите кошелек!");
-  try {
-    const requiredUsdt = await escrowContract.getRequiredUsdtDeposit().call();
-    addAuditLog(currentAccount, "Отправка запроса Approve USDT...");
-    
-    const tx = await usdtContract.approve(ESCROW_ADDRESS, requiredUsdt.toString()).send();
-    addAuditLog(currentAccount, `Approve выполнен успешно! TX: ${tx}`);
-    alert("Approve успешно подтвержден!");
-  } catch (err) {
-    const msg = err?.message || err || "Транзакция отклонена пользователем";
-    addAuditLog(currentAccount, `Ошибка Approve: ${msg}`);
-    alert("Ошибка Approve: " + msg);
-  }
-}
-
-// --- Обработчик 2: Deposit & Lock ---
-async function handleDeposit() {
-  if (!escrowContract) return alert("Сначала подключите кошелек!");
-  try {
-    addAuditLog(currentAccount, "Отправка 2000 TRX + USDT на Deposit & Lock...");
-    
-    const tx = await escrowContract.depositAndLock().send({
-      callValue: window.tronWeb.toSun(2000),
-      feeLimit: 150000000
-    });
-    
-    addAuditLog(currentAccount, `Депозит заблокирован в контракте! TX: ${tx}`);
-    alert("Депозит успешно зафиксирован!");
-    
-    setTimeout(refreshState, 2000);
-  } catch (err) {
-    const msg = err?.message || err || "Транзакция отклонена пользователем";
-    addAuditLog(currentAccount, `Ошибка депозита: ${msg}`);
-    alert("Ошибка депозита: " + msg);
   }
 }
 
@@ -202,12 +160,7 @@ function handleSign(role) {
 // --- Инициализация событий ---
 document.addEventListener('DOMContentLoaded', () => {
   const btnConnectTL = document.getElementById('connectTronLinkBtn');
-  const btnApprove = document.getElementById('actionUsdtBtn');
-  const btnDeposit = document.getElementById('depositBtn');
-
   if (btnConnectTL) btnConnectTL.addEventListener('click', connectTronLink);
-  if (btnApprove) btnApprove.addEventListener('click', handleApprove);
-  if (btnDeposit) btnDeposit.addEventListener('click', handleDeposit);
 
   const btnInv = document.getElementById('signInvestorBtn');
   const btnOrc = document.getElementById('signOracleBtn');
