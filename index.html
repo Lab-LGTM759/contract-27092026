@@ -1,97 +1,182 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tangem Escrow dApp</title>
-    <link rel="stylesheet" href="styles.css">
-    
-    <!-- Ethers.js & WalletConnect SDK -->
-    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
+    <title>Institutional Escrow Portal / Институциональный эскроу-портал</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/tronweb/dist/TronWeb.js"></script>
 </head>
 <body>
-    <div class="app-container">
-        <!-- Шапка dApp -->
-        <header class="app-header">
-            <div class="logo-area">
-                <h2>Tangem Escrow</h2>
-                <span class="badge">Dynamic Gasless Escrow</span>
-            </div>
-            <div class="wallet-area">
-                <span id="networkStatus" class="status-dot offline"></span>
-                <span id="accountAddress">Кошелек не подключен</span>
-                <button id="btnConnect" class="btn-primary">Подключить Tangem / Web3</button>
-            </div>
-        </header>
+    <div class="container">
+        <h1>Institutional Escrow Panel / Панель Эскроу (3-of-3 Multi-Sig)</h1>
 
-        <!-- Главная Панель -->
-        <main class="dashboard-grid">
-            <!-- Карточка: Информация о контракте -->
-            <section class="card overview-card">
-                <h3>Информация о контракте</h3>
-                <div class="info-grid">
-                    <div class="info-item">
-                        <label>Общий объем договора:</label>
-                        <span id="totalVolume">50,000,000,000 EUR</span>
-                    </div>
-                    <div class="info-item">
-                        <label>Курс EUR/USDT (Oracle):</label>
-                        <span id="oracleRate">Загрузка...</span>
-                    </div>
-                    <div class="info-item">
-                        <label>Статус депозита:</label>
-                        <span id="depositStatus" class="status-badge pending">Ожидает пополнения</span>
-                    </div>
-                    <div class="info-item">
-                        <label>Этап 1 (Stage 1):</label>
-                        <span id="stage1Status" class="status-badge pending">Не пройден</span>
-                    </div>
+        <!-- Комплаенс и время -->
+        <div class="card">
+            <h2>Compliance & System Time / Комплаенс и время Лондона (GMT/BST)</h2>
+            <div class="info-grid">
+                <div>
+                    <label>Current London Time / Время Лондона:</label>
+                    <div id="londonClock" class="time-display">--:--:-- GMT/BST</div>
                 </div>
-            </section>
-
-            <!-- Карточка: Расчет и Депозит (Приемка) -->
-            <section class="card action-card">
-                <h3>Пополнение депозита (Приемка)</h3>
-                <p class="description">
-                    Рассчитано динамически: <strong>11% комиссий + 5% защитный буфер (всего 11.55%)</strong> в USDT по курсу оракула + 2000 TRX на газ. Неиспользованный остаток буфера вернется Приемке.
-                </p>
-                
-                <div class="calculation-box">
-                    <div class="calc-row">
-                        <span>Требуемый USDT депозит:</span>
-                        <strong id="requiredUsdt">0.00 USDT</strong>
-                    </div>
-                    <div class="calc-row">
-                        <span>Требуемый TRX газ:</span>
-                        <strong>2,000 TRX</strong>
-                    </div>
+                <div>
+                    <label>Contract Status / Статус контракта:</label>
+                    <div id="pauseStatusDisplay" class="status-badge">Загрузка...</div>
                 </div>
+            </div>
+            <div class="info-grid" style="margin-top: 10px;">
+                <div style="grid-column: span 2;">
+                    <label>Legal & AML Document Hash / Хэш документов:</label>
+                    <div id="amlDocHashDisplay" class="hash-code">Подключите кошелек...</div>
+                </div>
+            </div>
+        </div>
 
+        <!-- Депозит и Таймер -->
+        <div class="card" style="border: 1px solid #3b82f6;">
+            <h2>Receiver Deposit & 5-Day Escrow Timer / Депозит Приемки и Таймер 5 суток</h2>
+            <div class="info-grid">
+                <div>
+                    <label>Статус депозита Приемки:</label>
+                    <div id="depositLockStatus" class="status-badge" style="color: #ef4444;">НЕ ВНЕСЕН / NOT LOCKED</div>
+                </div>
+                <div>
+                    <label>Баланс контракта (USDT):</label>
+                    <div id="depositedAmountDisplay" class="time-display" style="color: #38bdf8;">0.00 USDT</div>
+                </div>
+            </div>
+            <div class="info-grid" style="margin-top: 10px;">
+                <div>
+                    <label>Обратный отсчет до Аварийного возврата (5 суток):</label>
+                    <div id="emergencyTimerDisplay" class="time-display" style="color: #f59e0b; font-size: 18px;">--д --ч --м --с</div>
+                </div>
+                <div>
+                    <label>Адрес возврата депозита (Приемка):</label>
+                    <div id="receiverRefundAddress" class="hash-code">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Подключение -->
+        <div class="card">
+            <h2>1. Connection & Identification / Подключение</h2>
+            <div class="button-group">
+                <button id="btnConnectBrowser" class="btn primary">Connect TronLink / Tangem / Подключить кошелек</button>
+                <button id="btnConnectQR" class="btn secondary">App QR Code / QR-код</button>
+            </div>
+            <p id="walletAddress" class="status-text">Статус: Не подключен</p>
+            <p id="userRoleDisplay" class="role-badge">Роль: Подключите кошелек</p>
+            
+            <!-- Модальное окно QR-кода -->
+            <div id="qrModal" class="modal">
+                <div class="modal-content">
+                    <span id="btnCloseQR" class="close-btn">&times;</span>
+                    <h3 style="color: #0f172a; margin-bottom: 12px; font-size: 16px;">Scan with Wallet App / Отсканируйте кошельком</h3>
+                    <div id="qrcode"></div>
+                    <p style="color: #64748b; font-size: 11px; margin-top: 12px;">Откройте встроенный dApp-браузер Tangem или TronLink и отсканируйте этот код.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Генерация подписей -->
+        <div class="card">
+            <h2>2. Signature Generation & Entry (EIP-191) / Генерация 3 подписей</h2>
+            
+            <div class="sig-box">
+                <h3>Investor / Инвестор (Party A)</h3>
                 <div class="button-group">
-                    <button id="btnApprove" class="btn-secondary" disabled>1. Одобрить USDT (Approve)</button>
-                    <button id="btnDeposit" class="btn-action" disabled>2. Внести депозит (Deposit & Lock)</button>
+                    <button id="btnSignInvestor" class="btn">1. Generate Investor Signature</button>
                 </div>
-            </section>
-
-            <!-- Карточка: Исполнение Stage 2 -->
-            <section class="card execution-card">
-                <h3>Завершение сделки (Stage 2)</h3>
-                <p class="description">
-                    Автоматический фикс курса и распределение комиссий 5 получателям при наличии подписей сторон.
-                </p>
-                <button id="btnExecuteStage2" class="btn-success" disabled>Выполнить распределение (Stage 2)</button>
-            </section>
-        </main>
-
-        <!-- Консоль Логов -->
-        <footer class="app-footer">
-            <div id="logConsole" class="log-console">
-                <p class="log-entry system">[Система]: Ожидание подключения кошелька Tangem / TronLink...</p>
+                <div class="input-group">
+                    <div class="input-row">
+                        <input type="text" id="timeA" placeholder="London Epoch Time" readonly>
+                        <input type="text" id="sigA" placeholder="Investor Signature Hash" readonly>
+                    </div>
+                </div>
             </div>
-        </footer>
-    </div>
 
+            <div class="sig-box">
+                <h3>Receiver / Приемка (Party B)</h3>
+                <div class="button-group">
+                    <button id="btnSignOperator" class="btn">2. Generate Receiver Signature</button>
+                </div>
+                <div class="input-group">
+                    <div class="input-row">
+                        <input type="text" id="timeB" placeholder="London Epoch Time" readonly>
+                        <input type="text" id="sigB" placeholder="Receiver Signature Hash" readonly>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sig-box">
+                <h3>Oracle Coordinator / Оракул</h3>
+                <div class="button-group">
+                    <button id="btnSignOracle" class="btn">3. Generate Oracle Signature</button>
+                </div>
+                <div class="input-group">
+                    <div class="input-row">
+                        <input type="text" id="timeOracle" placeholder="London Epoch Time" readonly>
+                        <input type="text" id="sigOracle" placeholder="Oracle Signature Hash" readonly>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Панель исполнения -->
+        <div class="card coordinator-panel">
+            <h2>3. Execution Panel / Панель исполнения смарт-контракта</h2>
+            <div class="button-group">
+                <button id="btnExecuteStage2" class="btn success">Execute Stage 2 Payouts / Исполнить выплаты</button>
+                <button id="btnTimeoutRefund" class="btn secondary">Emergency Refund (5 Days) / Аварийный возврат Приемке</button>
+            </div>
+            <p id="txStatus" class="status-text"></p>
+        </div>
+
+        <!-- Управление кошельками -->
+        <div class="card">
+            <h2>4. Payee Wallets Management (3-of-3) / Управление кошельками</h2>
+            <div class="input-group">
+                <label>0. Investor / Инвестор (5.00% / 500 BPS):</label>
+                <input type="text" id="payee0" placeholder="Base58 TRON Address (T...)" />
+            </div>
+            <div class="input-group">
+                <label>1. Oracle / Оракул (3.50% / 350 BPS):</label>
+                <input type="text" id="payee1" placeholder="Base58 TRON Address (T...)" />
+            </div>
+            <div class="input-group">
+                <label>2. Participant #1 / Участник №1 (1.50% / 150 BPS):</label>
+                <input type="text" id="payee2" placeholder="Base58 TRON Address (T...)" />
+            </div>
+            <div class="input-group">
+                <label>3. Participant #2 / Участник №2 (1.00% / 100 BPS):</label>
+                <input type="text" id="payee3" placeholder="Base58 TRON Address (T...)" />
+            </div>
+            <div class="button-group" style="margin-top: 15px;">
+                <button id="btnUpdateWallets" class="btn secondary">Update Payee Wallets / Обновить кошельки</button>
+            </div>
+        </div>
+
+        <!-- Аудиторский реестр -->
+        <div class="card">
+            <h2>5. Audit Event & Payout Trail / Аудиторский реестр всех вызовов</h2>
+            <p class="subtitle">Фиксирует ВСЕ попытки взаимодействия со смарт-контрактом (включая FAILED/REVERT).</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Действие / Метод</th>
+                        <th>Статус выполнения</th>
+                        <th>Хэш транзакции</th>
+                        <th>Время Лондона (GMT/BST)</th>
+                    </tr>
+                </thead>
+                <tbody id="registryBody">
+                    <tr><td colspan="5" style="text-align:center;">Загрузка истории транзакций...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
     <script src="app.js"></script>
 </body>
 </html>
