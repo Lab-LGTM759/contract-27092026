@@ -6,7 +6,7 @@
   <title>Escrow dApp | TangemGaslessDynamicEscrow</title>
   <link rel="stylesheet" href="style.css">
   
-  <!-- Исправленные надежные CDN библиотеки -->
+  <!-- CDN библиотеки Ethers.js (для keccak256) и QRCode.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
@@ -15,28 +15,29 @@
     <header class="header">
       <div>
         <h1>Tangem Gasless Escrow Panel</h1>
-        <p class="subtitle">Сеть TRON Shasta | Контракт: 0x708afe235a9b4e7616dbdb0e74c7d239b1a130f2</p>
+        <p class="subtitle">Сеть TRON Shasta | Контракт: TLEHBvmyqueaBJErZfe2QWw8qLwKEaEe8A</p>
       </div>
       <div class="header-buttons">
         <button id="showQrBtn" class="btn secondary">QR-код подключения</button>
-        <button id="connectWalletBtn" class="btn primary">Подключить кошелек</button>
+        <button id="connectWalletBtn" class="btn primary">Подключить TronLink</button>
       </div>
     </header>
 
-    <!-- Модальное окно / карточка с QR-кодом -->
+    <!-- Модальное окно с QR-кодом -->
     <div id="qrModal" class="modal hidden">
       <div class="modal-content card">
         <span id="closeQrBtn" class="close-btn">&times;</span>
-        <h2>QR-код для подключения кошелька</h2>
-        <p class="hint">Отсканируйте через мобильное приложение (Tangem / WalletConnect / TronLink):</p>
+        <h2>QR-код привязки кошелька</h2>
+        <p class="hint">Отсканируйте через мобильное приложение (Tangem / TronLink):</p>
         <div id="qrcode" class="qr-container"></div>
         <p id="qrAddressText" class="qr-address"></p>
       </div>
     </div>
 
+    <!-- Информационная карточка кошелька -->
     <div class="card wallet-info">
-      <p><strong>Адрес кошелька:</strong> <span id="userAddress">Не подключен</span></p>
-      <p><strong>Сеть (Chain ID):</strong> <span id="networkChainId">-</span></p>
+      <p><strong>Подключенный TRON адрес:</strong> <span id="userAddress">Не подключен</span></p>
+      <p><strong>Сеть:</strong> <span id="networkChainId">-</span></p>
       <p><strong>Текущий Nonce контракта:</strong> <span id="contractNonce">-</span></p>
     </div>
 
@@ -58,7 +59,7 @@
 
     <!-- Панель действий -->
     <main class="grid-actions">
-      <!-- Депозит -->
+      <!-- 1. Депозит -->
       <section class="card">
         <h2>1. Пополнение и блокировка депозита</h2>
         <div class="form-group">
@@ -72,7 +73,7 @@
         <button id="depositBtn" class="btn action-btn">Внести депозит (Приемка)</button>
       </section>
 
-      <!-- Генератор подписи Stage 1 -->
+      <!-- 2.1 Генератор подписи Stage 1 -->
       <section class="card">
         <h2>2.1 Локальный генератор подписи (Stage 1)</h2>
         <div class="form-group">
@@ -94,7 +95,7 @@
         </div>
       </section>
 
-      <!-- Отправка Stage 1 -->
+      <!-- 2.2 Отправка Stage 1 -->
       <section class="card full-width">
         <h2>2.2 Исполнение Этапа 1 в блокчейне (3 из 3)</h2>
         <div class="grid-3-col">
@@ -126,7 +127,7 @@
         <button id="execStage1Btn" class="btn action-btn">Отправить Stage 1 в смарт-контракт</button>
       </section>
 
-      <!-- Генератор и Исполнение Stage 2 -->
+      <!-- 3. Генератор и Исполнение Stage 2 -->
       <section class="card full-width">
         <h2>3. Выполнение и распределение комиссий (Stage 2)</h2>
         <div class="grid-2-col">
@@ -161,7 +162,7 @@
         </div>
       </section>
 
-      <!-- Возврат средств -->
+      <!-- 4. Возврат средств -->
       <section class="card full-width">
         <h2>4. Возврат средств и Тайм-ауты</h2>
         <div class="grid-2-col">
