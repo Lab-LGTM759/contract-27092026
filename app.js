@@ -1,249 +1,180 @@
-const CONTRACT_ADDRESS = "TDcgpz4UvmHDA9KYnk5ktPFFo1EFXjNnuM";
-let currentAccount = null;
-
 /**
- * Инициализация подключения к TronLink
+ * Tangem Gasless Escrow dApp Client
+ * Поддерживает гибридное подключение: TronLink, Web3 и WalletConnect v2 (Tangem NFC App)
  */
-async function initTron() {
-  const netStatus = document.getElementById("netStatus");
-  const userAddress = document.getElementById("userAddress");
 
-  if (window.tronWeb && window.tronWeb.ready) {
-    currentAccount = window.tronWeb.defaultAddress.base58;
-    netStatus.innerText = "TronLink Активен";
-    netStatus.style.background = "#10b981";
-    userAddress.innerText = currentAccount;
-  } else {
-    netStatus.innerText = "TronGrid API Mode";
-    netStatus.style.background = "#64748b";
-    userAddress.innerText = "Автономный режим";
-  }
-}
+const CONFIG = {
+    contractAddress: "0x7777777777777777777777777777777777777777", // Адрес смарт-контракта
+    usdtAddress: "0xa614f803B6FD780986A42c78Ec9c7f77e6DeD13C",     // Адрес TRC-20 / ERC-20 USDT
+    trxRequiredSun: "2000000000",                                 // 2000 TRX на газ
+    walletConnectProjectId: "YOUR_WALLETCONNECT_PROJECT_ID"       // Ваш ID с cloud.walletconnect.com
+};
 
-/**
- * Запрос логов событий из сети TRON через Event API
- */
-async function fetchContractEvents(eventName) {
-  const eventServerHost = (window.tronWeb && window.tronWeb.eventServer && window.tronWeb.eventServer.host) 
-    ? window.tronWeb.eventServer.host 
-    : "https://api.shasta.trongrid.io";
+const ESCROW_ABI = [
+    "function getRequiredUsdtDeposit() public view returns (uint256)",
+    "function depositAndLock() external payable",
+    "function isDepositLocked() public view returns (bool)",
+    "function isStage1Completed() public view returns (bool)",
+    "function priceOracle() public view returns (address)"
+];
 
-  const url = `${eventServerHost}/v1/contracts/${CONTRACT_ADDRESS}/events?event_name=${eventName}&only_confirmed=true&limit=200`;
+const ORACLE_ABI = [
+    "function getEurUsdtRate() external view returns (uint256)"
+];
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Ошибка обращения к Event API TRON (${response.statusText})`);
-  }
+const ERC20_ABI = [
+    "function allowance(address owner, address spender) view returns (uint256)",
+    "function approve(address spender, uint256 amount) returns (bool)"
+];
 
-  const json = await response.json();
-  if (!json.success || !json.data) {
-    return [];
-  }
+let userAddress = null;
+let provider = null;
+let signer = null;
+let escrowContract = null;
+let usdtContract = null;
+let requiredUsdtAmount = "0";
 
-  return json.data.map(eventLog => ({
-    eventName: eventLog.event_name,
-    transactionId: eventLog.transaction_id,
-    blockNumber: eventLog.block_number,
-    blockTimestamp: eventLog.block_timestamp,
-    formattedDateTime: new Date(eventLog.block_timestamp).toISOString(),
-    contractAddress: CONTRACT_ADDRESS,
-    parameters: eventLog.result
-  }));
-}
-
-/**
- * Восстановление адреса подписанта через ecrecover (Ethers.js)
- */
-function verifySignatureAddress(messageHash, signature) {
-  try {
-    if (!signature || signature.length < 130) {
-      return null;
-    }
-    const ethHash = ethers.utils.hashMessage(ethers.utils.arrayify(messageHash));
-    return ethers.utils.recoverAddress(ethHash, signature);
-  } catch (err) {
-    console.warn("Ошибка ecrecover:", err.message);
-    return null;
-  }
-}
-
-/**
- * Экспорт логов в формате JSON
- */
-async function exportEscrowLogsToJson() {
-  const btn = document.getElementById("btnExportLogs");
-  const originalText = btn.innerText;
-
-  try {
-    btn.innerText = "⏳ Загрузка...";
-    btn.disabled = true;
-
-    const [stage1Events, stage2Events] = await Promise.all([
-      fetchContractEvents("Stage1Signed"),
-      fetchContractEvents("Stage2Executed")
-    ]);
-
-    const allEvents = [...stage1Events, ...stage2Events].sort((a, b) => a.blockTimestamp - b.blockTimestamp);
-
-    if (allEvents.length === 0) {
-      alert("В сети TRON не найдено событий для этого контракта.");
-      return;
-    }
-
-    const auditReport = {
-      title: "Tangem Escrow Audit Trail",
-      contractAddress: CONTRACT_ADDRESS,
-      exportedAt: new Date().toISOString(),
-      network: "TRON",
-      totalEvents: allEvents.length,
-      events: allEvents
-    };
-
-    const blob = new Blob([JSON.stringify(auditReport, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `escrow_log_${CONTRACT_ADDRESS.substring(0, 8)}_${Date.now()}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    alert(`Ошибка экспорта: ${err.message || err}`);
-  } finally {
-    btn.innerText = originalText;
-    btn.disabled = false;
-  }
-}
-
-/**
- * Генерация печатного PDF-отчета с результатами ecrecover
- */
-async function generatePdfAuditReport() {
-  const btn = document.getElementById("btnGeneratePdf");
-  const originalText = btn.innerText;
-
-  try {
-    btn.innerText = "🔍 Проверка ecrecover...";
-    btn.disabled = true;
-
-    const hashA = document.getElementById("hashA").value || "N/A";
-    const sigA = document.getElementById("signatureA").value || "";
-
-    const hashB = document.getElementById("hashB").value || "N/A";
-    const sigB = document.getElementById("signatureB").value || "";
-
-    const hashOracle = document.getElementById("hashOracle").value || "N/A";
-    const sigOracle = document.getElementById("signatureOracle").value || "";
-
-    // Выполнение ecrecover для всех 3 сторон
-    const recA = verifySignatureAddress(hashA, sigA);
-    const recB = verifySignatureAddress(hashB, sigB);
-    const recOracle = verifySignatureAddress(hashOracle, sigOracle);
-
-    const stage1Events = await fetchContractEvents("Stage1Signed");
-    const stage2Events = await fetchContractEvents("Stage2Executed");
-
-    const reportHtml = `
-      <!DOCTYPE html>
-      <html lang="ru">
-      <head>
-        <meta charset="UTF-8">
-        <title>Escrow Verified Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 25px; color: #1e293b; background: #fff; }
-          .header { border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 15px; }
-          .header h1 { font-size: 18px; margin: 0; color: #0f172a; }
-          .header p { font-size: 11px; color: #64748b; margin-top: 4px; }
-          .section-title { font-size: 12px; font-weight: bold; margin-top: 15px; margin-bottom: 8px; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 10px; }
-          th, td { border: 1px solid #cbd5e1; padding: 5px 7px; text-align: left; word-break: break-all; }
-          th { background-color: #f1f5f9; }
-          .valid { color: #059669; font-weight: bold; }
-          .invalid { color: #dc2626; font-weight: bold; }
-          .stamp { border: 1px dashed #94a3b8; padding: 10px; margin-top: 20px; font-size: 10px; background: #f8fafc; }
-          @page { size: A4; margin: 12mm; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>АУДИТОРСКИЙ ОТЧЕТ ИСПОЛНЕНИЯ ESCROW (ECRECOVER VERIFIED)</h1>
-          <p>Дата формирования: ${new Date().toLocaleString("ru-RU")} | Контракт: ${CONTRACT_ADDRESS}</p>
-        </div>
-
-        <div class="section-title">1. Результаты верификации подписей (ecrecover / Secp256k1)</div>
-        <table>
-          <thead>
-            <tr><th>Сторона</th><th>Хэш данных</th><th>Восстановленный адрес (ecrecover)</th><th>Статус</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Party A (Investor)</td>
-              <td>${hashA}</td>
-              <td>${recA || "Ошибка / подпись отсутствует"}</td>
-              <td class="${recA ? 'valid' : 'invalid'}">${recA ? '✓ ВЕРИФИЦИРОВАНО' : '✗ ОШИБКА'}</td>
-            </tr>
-            <tr>
-              <td>Party B (Receiver)</td>
-              <td>${hashB}</td>
-              <td>${recB || "Ошибка / подпись отсутствует"}</td>
-              <td class="${recB ? 'valid' : 'invalid'}">${recB ? '✓ ВЕРИФИЦИРОВАНО' : '✗ ОШИБКА'}</td>
-            </tr>
-            <tr>
-              <td>Oracle Coordinator</td>
-              <td>${hashOracle}</td>
-              <td>${recOracle || "Ошибка / подпись отсутствует"}</td>
-              <td class="${recOracle ? 'valid' : 'invalid'}">${recOracle ? '✓ ВЕРИФИЦИРОВАНО' : '✗ ОШИБКА'}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="section-title">2. Логи событий сети TRON (On-Chain Trail)</div>
-        <table>
-          <thead>
-            <tr><th>Событие</th><th>Блок</th><th>TxHash</th><th>Дата (UTC)</th></tr>
-          </thead>
-          <tbody>
-            ${
-              stage1Events.length > 0 
-                ? stage1Events.map(e => `<tr><td><b>Stage1Signed</b></td><td>#${e.blockNumber}</td><td>${e.transactionId}</td><td>${e.formattedDateTime}</td></tr>`).join('')
-                : '<tr><td colspan="4" style="text-align:center;">События Stage1Signed не зафиксированы</td></tr>'
-            }
-            ${
-              stage2Events.length > 0 
-                ? stage2Events.map(e => `<tr><td><b>Stage2Executed</b></td><td>#${e.blockNumber}</td><td>${e.transactionId}</td><td>${e.formattedDateTime}</td></tr>`).join('')
-                : '<tr><td colspan="4" style="text-align:center;">События Stage2Executed не зафиксированы</td></tr>'
-            }
-          </tbody>
-        </table>
-
-        <div class="stamp">
-          <b>ЭЛЕКТРОННЫЙ ШТАМП ВЕРИФИКАЦИИ:</b><br>
-          Отчет сгенерирован автоматически на основе данных TRON Event Server и локальной криптографической проверки подписей.<br>
-          Verification Hash: ${ethers.utils.id(CONTRACT_ADDRESS + Date.now())}
-        </div>
-
-        <script>
-          window.onload = function() { setTimeout(() => { window.print(); }, 400); };
-        </script>
-      </body>
-      </html>
-    `;
-
-    const printWindow = window.open("", "_blank", "width=900,height=800");
-    printWindow.document.write(reportHtml);
-    printWindow.document.close();
-  } catch (err) {
-    alert(`Ошибка генерации PDF: ${err.message || err}`);
-  } finally {
-    btn.innerText = originalText;
-    btn.disabled = false;
-  }
-}
-
-// Слушатели событий
-document.addEventListener("DOMContentLoaded", () => {
-  initTron();
-  document.getElementById("btnExportLogs").addEventListener("click", exportEscrowLogsToJson);
-  document.getElementById("btnGeneratePdf").addEventListener("click", generatePdfAuditReport);
+window.addEventListener("load", async () => {
+    log("Инициализация dApp...");
+    document.getElementById("btnConnect").addEventListener("click", connectWallet);
+    document.getElementById("btnApprove").addEventListener("click", handleApprove);
+    document.getElementById("btnDeposit").addEventListener("click", handleDepositAndLock);
 });
+
+function log(message, type = "system") {
+    const consoleEl = document.getElementById("logConsole");
+    if (!consoleEl) return;
+    const p = document.createElement("p");
+    p.className = `log-entry ${type}`;
+    p.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    consoleEl.appendChild(p);
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+async function connectWallet() {
+    try {
+        // 1. Проверка встроенного браузера кошелька (TronLink или Web3)
+        if (window.ethereum || window.tronWeb) {
+            log("Подключение через встроенный Web3 / TronLink провайдер...");
+            provider = new ethers.providers.Web3Provider(window.ethereum || window.tronWeb);
+            await provider.send("eth_requestAccounts", []);
+            signer = provider.getSigner();
+            userAddress = await signer.getAddress();
+        } 
+        // 2. Подключение Tangem через WalletConnect v2
+        else if (window.WalletConnectProvider) {
+            log("Запуск WalletConnect для Tangem (Откройте QR-код)...");
+            const wcProvider = new WalletConnectProvider.default({
+                projectId: CONFIG.walletConnectProjectId,
+                rpc: { 728126428: "https://api.trongrid.io" }
+            });
+            await wcProvider.enable();
+            provider = new ethers.providers.Web3Provider(wcProvider);
+            signer = provider.getSigner();
+            userAddress = await signer.getAddress();
+        } else {
+            alert("Кошелек не обнаружен. Установите TronLink или сканируйте QR-код через мобильное приложение Tangem.");
+            return;
+        }
+
+        document.getElementById("accountAddress").textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(userAddress.length - 4)}`;
+        document.getElementById("networkStatus").className = "status-dot online";
+        log(`Кошелек успешно подключен: ${userAddress}`, "success");
+
+        initContracts();
+        await updateDashboardData();
+    } catch (err) {
+        log(`Ошибка подключения: ${err.message || err}`, "error");
+    }
+}
+
+function initContracts() {
+    escrowContract = new ethers.Contract(CONFIG.contractAddress, ESCROW_ABI, signer);
+    usdtContract = new ethers.Contract(CONFIG.usdtAddress, ERC20_ABI, signer);
+}
+
+async function updateDashboardData() {
+    try {
+        log("Запрос точных данных из смарт-контракта...");
+
+        // 1. Запрос динамически рассчитанного депозита USDT
+        const rawRequiredUsdt = await escrowContract.getRequiredUsdtDeposit();
+        requiredUsdtAmount = rawRequiredUsdt.toString();
+
+        // Форматирование (6 decimals для USDT)
+        const formattedUsdt = ethers.utils.formatUnits(rawRequiredUsdt, 6);
+        document.getElementById("requiredUsdt").textContent = `${Number(formattedUsdt).toLocaleString()} USDT`;
+
+        // 2. Получение текущего курса из Оракула
+        const oracleAddress = await escrowContract.priceOracle();
+        const oracleContract = new ethers.Contract(oracleAddress, ORACLE_ABI, provider);
+        const rate = await oracleContract.getEurUsdtRate();
+        const formattedRate = ethers.utils.formatUnits(rate, 18);
+        document.getElementById("oracleRate").textContent = `1 EUR = ${Number(formattedRate).toFixed(4)} USDT`;
+
+        // 3. Проверка статусов контракта
+        const isLocked = await escrowContract.isDepositLocked();
+        const isStage1 = await escrowContract.isStage1Completed();
+
+        if (isLocked) {
+            const depositEl = document.getElementById("depositStatus");
+            depositEl.textContent = "Внесен и заблокирован";
+            depositEl.className = "status-badge active";
+            document.getElementById("btnDeposit").disabled = true;
+            document.getElementById("btnApprove").disabled = true;
+        } else {
+            await checkAllowance();
+        }
+
+        if (isStage1) {
+            const stage1El = document.getElementById("stage1Status");
+            stage1El.textContent = "Пройден";
+            stage1El.className = "status-badge active";
+        }
+
+        log("Данные dApp обновлены.", "success");
+    } catch (err) {
+        log(`Ошибка загрузки данных: ${err.message || err}`, "error");
+    }
+}
+
+async function checkAllowance() {
+    const currentAllowance = await usdtContract.allowance(userAddress, CONFIG.contractAddress);
+    if (currentAllowance.gte(requiredUsdtAmount)) {
+        document.getElementById("btnApprove").disabled = true;
+        document.getElementById("btnDeposit").disabled = false;
+        log("Лимит USDT одобрен. Готово к пополнению.");
+    } else {
+        document.getElementById("btnApprove").disabled = false;
+        document.getElementById("btnDeposit").disabled = true;
+        log("Требуется подтверждение Approve в кошельке Tangem.");
+    }
+}
+
+async function handleApprove() {
+    try {
+        log("Подтвердите транзакцию Approve на карте Tangem...");
+        const tx = await usdtContract.approve(CONFIG.contractAddress, requiredUsdtAmount);
+        log(`Транзакция отправлена: ${tx.hash}`);
+        await tx.wait();
+        log("Одобрение USDT успешно подтверждено!", "success");
+        await checkAllowance();
+    } catch (err) {
+        log(`Ошибка при одобрении USDT: ${err.message || err}`, "error");
+    }
+}
+
+async function handleDepositAndLock() {
+    try {
+        log("Подтвердите пополнение (USDT + 2000 TRX) на карте Tangem...");
+        const tx = await escrowContract.depositAndLock({
+            value: CONFIG.trxRequiredSun // 2000 TRX в SUN
+        });
+        log(`Транзакция пополнения отправлена: ${tx.hash}`);
+        await tx.wait();
+        log("Депозит заблокирован в смарт-контракте!", "success");
+        await updateDashboardData();
+    } catch (err) {
+        log(`Ошибка при внесении депозита: ${err.message || err}`, "error");
+    }
+}
