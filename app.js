@@ -1,180 +1,335 @@
-/**
- * Tangem Gasless Escrow dApp Client
- * Поддерживает гибридное подключение: TronLink, Web3 и WalletConnect v2 (Tangem NFC App)
- */
-
-const CONFIG = {
-    contractAddress: "0x7777777777777777777777777777777777777777", // Адрес смарт-контракта
-    usdtAddress: "0xa614f803B6FD780986A42c78Ec9c7f77e6DeD13C",     // Адрес TRC-20 / ERC-20 USDT
-    trxRequiredSun: "2000000000",                                 // 2000 TRX на газ
-    walletConnectProjectId: "YOUR_WALLETCONNECT_PROJECT_ID"       // Ваш ID с cloud.walletconnect.com
-};
-
-const ESCROW_ABI = [
-    "function getRequiredUsdtDeposit() public view returns (uint256)",
-    "function depositAndLock() external payable",
-    "function isDepositLocked() public view returns (bool)",
-    "function isStage1Completed() public view returns (bool)",
-    "function priceOracle() public view returns (address)"
-];
-
-const ORACLE_ABI = [
-    "function getEurUsdtRate() external view returns (uint256)"
-];
-
-const ERC20_ABI = [
-    "function allowance(address owner, address spender) view returns (uint256)",
-    "function approve(address spender, uint256 amount) returns (bool)"
-];
-
 let userAddress = null;
-let provider = null;
-let signer = null;
-let escrowContract = null;
-let usdtContract = null;
-let requiredUsdtAmount = "0";
+let tronWebInstance = null;
 
-window.addEventListener("load", async () => {
-    log("Инициализация dApp...");
-    document.getElementById("btnConnect").addEventListener("click", connectWallet);
-    document.getElementById("btnApprove").addEventListener("click", handleApprove);
-    document.getElementById("btnDeposit").addEventListener("click", handleDepositAndLock);
+// Адрес развернутого контракта в TRON (Base58 формат)
+const CONTRACT_ADDRESS = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // Замените на адрес смарт-контракта
+const USDT_TRC20_ADDRESS = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // TRC-20 USDT в сети Mainnet (или Nile/Shasta)
+const CHAIN_ID = 728126428; // TRON Mainnet Chain ID
+
+let emergencyDeadlineTimestamp = 0;
+
+const walletAddressLabel = document.getElementById('walletAddress');
+const txStatusLabel = document.getElementById('txStatus');
+const userRoleDisplay = document.getElementById('userRoleDisplay');
+
+// Часы Лондона
+function updateLondonClock() {
+    const clockElem = document.getElementById('londonClock');
+    if (!clockElem) return;
+    const options = { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+    clockElem.innerText = new Intl.DateTimeFormat('en-GB', options).format(new Date()) + " (London GMT/BST)";
+}
+setInterval(updateLondonClock, 1000);
+
+// Инициализация при загрузке
+window.addEventListener('load', () => {
+    checkTronLinkAutoConnect();
 });
 
-function log(message, type = "system") {
-    const consoleEl = document.getElementById("logConsole");
-    if (!consoleEl) return;
-    const p = document.createElement("p");
-    p.className = `log-entry ${type}`;
-    p.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-    consoleEl.appendChild(p);
-    consoleEl.scrollTop = consoleEl.scrollHeight;
+async function checkTronLinkAutoConnect() {
+    if (window.tronWeb && window.tronWeb.ready) {
+        await initTronWeb();
+    }
 }
 
-async function connectWallet() {
-    try {
-        // 1. Проверка встроенного браузера кошелька (TronLink или Web3)
-        if (window.ethereum || window.tronWeb) {
-            log("Подключение через встроенный Web3 / TronLink провайдер...");
-            provider = new ethers.providers.Web3Provider(window.ethereum || window.tronWeb);
-            await provider.send("eth_requestAccounts", []);
-            signer = provider.getSigner();
-            userAddress = await signer.getAddress();
-        } 
-        // 2. Подключение Tangem через WalletConnect v2
-        else if (window.WalletConnectProvider) {
-            log("Запуск WalletConnect для Tangem (Откройте QR-код)...");
-            const wcProvider = new WalletConnectProvider.default({
-                projectId: CONFIG.walletConnectProjectId,
-                rpc: { 728126428: "https://api.trongrid.io" }
-            });
-            await wcProvider.enable();
-            provider = new ethers.providers.Web3Provider(wcProvider);
-            signer = provider.getSigner();
-            userAddress = await signer.getAddress();
-        } else {
-            alert("Кошелек не обнаружен. Установите TronLink или сканируйте QR-код через мобильное приложение Tangem.");
+async function initTronWeb() {
+    tronWebInstance = window.tronWeb;
+    userAddress = tronWebInstance.defaultAddress.base58;
+    walletAddressLabel.innerText = "Подключен кошелек: " + userAddress;
+
+    await loadContractComplianceData();
+    await loadDepositAndTimerData();
+    await loadCurrentPayees();
+    await loadFullAuditTrailWithFailures();
+}
+
+// Подключение кошелька по кнопке
+document.getElementById('btnConnectBrowser').addEventListener('click', async () => {
+    if (window.tronLink) {
+        const response = await window.tronLink.request({ method: 'tron_requestAccounts' });
+        if (response.code === 200 && window.tronWeb && window.tronWeb.ready) {
+            await initTronWeb();
             return;
         }
-
-        document.getElementById("accountAddress").textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(userAddress.length - 4)}`;
-        document.getElementById("networkStatus").className = "status-dot online";
-        log(`Кошелек успешно подключен: ${userAddress}`, "success");
-
-        initContracts();
-        await updateDashboardData();
-    } catch (err) {
-        log(`Ошибка подключения: ${err.message || err}`, "error");
     }
-}
-
-function initContracts() {
-    escrowContract = new ethers.Contract(CONFIG.contractAddress, ESCROW_ABI, signer);
-    usdtContract = new ethers.Contract(CONFIG.usdtAddress, ERC20_ABI, signer);
-}
-
-async function updateDashboardData() {
-    try {
-        log("Запрос точных данных из смарт-контракта...");
-
-        // 1. Запрос динамически рассчитанного депозита USDT
-        const rawRequiredUsdt = await escrowContract.getRequiredUsdtDeposit();
-        requiredUsdtAmount = rawRequiredUsdt.toString();
-
-        // Форматирование (6 decimals для USDT)
-        const formattedUsdt = ethers.utils.formatUnits(rawRequiredUsdt, 6);
-        document.getElementById("requiredUsdt").textContent = `${Number(formattedUsdt).toLocaleString()} USDT`;
-
-        // 2. Получение текущего курса из Оракула
-        const oracleAddress = await escrowContract.priceOracle();
-        const oracleContract = new ethers.Contract(oracleAddress, ORACLE_ABI, provider);
-        const rate = await oracleContract.getEurUsdtRate();
-        const formattedRate = ethers.utils.formatUnits(rate, 18);
-        document.getElementById("oracleRate").textContent = `1 EUR = ${Number(formattedRate).toFixed(4)} USDT`;
-
-        // 3. Проверка статусов контракта
-        const isLocked = await escrowContract.isDepositLocked();
-        const isStage1 = await escrowContract.isStage1Completed();
-
-        if (isLocked) {
-            const depositEl = document.getElementById("depositStatus");
-            depositEl.textContent = "Внесен и заблокирован";
-            depositEl.className = "status-badge active";
-            document.getElementById("btnDeposit").disabled = true;
-            document.getElementById("btnApprove").disabled = true;
-        } else {
-            await checkAllowance();
-        }
-
-        if (isStage1) {
-            const stage1El = document.getElementById("stage1Status");
-            stage1El.textContent = "Пройден";
-            stage1El.className = "status-badge active";
-        }
-
-        log("Данные dApp обновлены.", "success");
-    } catch (err) {
-        log(`Ошибка загрузки данных: ${err.message || err}`, "error");
-    }
-}
-
-async function checkAllowance() {
-    const currentAllowance = await usdtContract.allowance(userAddress, CONFIG.contractAddress);
-    if (currentAllowance.gte(requiredUsdtAmount)) {
-        document.getElementById("btnApprove").disabled = true;
-        document.getElementById("btnDeposit").disabled = false;
-        log("Лимит USDT одобрен. Готово к пополнению.");
+    if (window.tronWeb && window.tronWeb.ready) {
+        await initTronWeb();
     } else {
-        document.getElementById("btnApprove").disabled = false;
-        document.getElementById("btnDeposit").disabled = true;
-        log("Требуется подтверждение Approve в кошельке Tangem.");
+        alert("Откройте dApp через TronLink или встроенный dApp-браузер Tangem Wallet!");
+    }
+});
+
+// Модальное окно QR-кода
+const qrModal = document.getElementById('qrModal');
+const btnConnectQR = document.getElementById('btnConnectQR');
+const btnCloseQR = document.getElementById('btnCloseQR');
+
+btnConnectQR.addEventListener('click', () => {
+    const qrContainer = document.getElementById('qrcode');
+    qrContainer.innerHTML = "";
+    
+    new QRCode(qrContainer, {
+        text: window.location.href,
+        width: 200,
+        height: 200,
+        colorDark: "#0f172a",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.H
+    });
+    
+    qrModal.style.display = "flex";
+});
+
+btnCloseQR.addEventListener('click', () => {
+    qrModal.style.display = "none";
+});
+
+window.addEventListener('click', (event) => {
+    if (event.target === qrModal) {
+        qrModal.style.display = "none";
+    }
+});
+
+// Загрузка состояния и комплаенса
+async function loadContractComplianceData() {
+    try {
+        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
+        
+        const legalHash = await contract.amlAndLegalDocHash().call();
+        document.getElementById('amlDocHashDisplay').innerText = legalHash;
+
+        const isPaused = await contract.isPaused().call();
+        const pauseElem = document.getElementById('pauseStatusDisplay');
+        pauseElem.innerText = isPaused ? "ЗАМОРОЖЕН / FROZEN" : "АКТИВЕН / ACTIVE";
+        pauseElem.style.color = isPaused ? "#ef4444" : "#10b981";
+
+        const investor = await contract.investor().call();
+        const receiver = await contract.receiver().call();
+        const oracle = await contract.oracle().call();
+
+        const currentHex = tronWebInstance.address.toHex(userAddress).toLowerCase();
+        if (currentHex === tronWebInstance.address.toHex(investor).toLowerCase()) {
+            userRoleDisplay.innerText = "Роль: Инвестор (Party A)";
+        } else if (currentHex === tronWebInstance.address.toHex(receiver).toLowerCase()) {
+            userRoleDisplay.innerText = "Роль: Приемка (Party B)";
+        } else if (currentHex === tronWebInstance.address.toHex(oracle).toLowerCase()) {
+            userRoleDisplay.innerText = "Роль: Оракул-Координатор";
+        } else {
+            userRoleDisplay.innerText = "Роль: Внешний наблюдатель";
+        }
+    } catch (err) {
+        console.error("Ошибка загрузки комплаенса:", err);
     }
 }
 
-async function handleApprove() {
+// Загрузка баланса и таймера
+async function loadDepositAndTimerData() {
     try {
-        log("Подтвердите транзакцию Approve на карте Tangem...");
-        const tx = await usdtContract.approve(CONFIG.contractAddress, requiredUsdtAmount);
-        log(`Транзакция отправлена: ${tx.hash}`);
-        await tx.wait();
-        log("Одобрение USDT успешно подтверждено!", "success");
-        await checkAllowance();
+        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
+
+        const isLocked = await contract.isDepositLocked().call();
+        const depositElem = document.getElementById('depositLockStatus');
+        depositElem.innerText = isLocked ? "ВНЕСЕН И ЗАБЛОКИРОВАН / LOCKED" : "ОЖИДАЕТ ВНОСА / PENDING";
+        depositElem.style.color = isLocked ? "#10b981" : "#f59e0b";
+
+        const usdtContract = await tronWebInstance.contract().at(USDT_TRC20_ADDRESS);
+        const rawBalance = await usdtContract.balanceOf(CONTRACT_ADDRESS).call();
+        document.getElementById('depositedAmountDisplay').innerText = `${(Number(rawBalance) / 1e6).toLocaleString()} USDT`;
+
+        const receiverAddr = await contract.receiver().call();
+        document.getElementById('receiverRefundAddress').innerText = tronWebInstance.address.fromHex(receiverAddr);
+
+        const isStage1Done = await contract.isStage1Completed().call();
+        let startTime = 0;
+        if (isStage1Done) {
+            startTime = Number(await contract.stage1Timestamp().call());
+        } else {
+            startTime = Number(await contract.contractCreatedAt().call());
+        }
+        emergencyDeadlineTimestamp = startTime + (5 * 24 * 3600);
     } catch (err) {
-        log(`Ошибка при одобрении USDT: ${err.message || err}`, "error");
+        console.error("Ошибка считывания депозита:", err);
     }
 }
 
-async function handleDepositAndLock() {
+// Отсчет 5 суток
+setInterval(() => {
+    const timerElem = document.getElementById('emergencyTimerDisplay');
+    if (!timerElem || emergencyDeadlineTimestamp === 0) return;
+
+    const now = Math.floor(Date.now() / 1000);
+    const diff = emergencyDeadlineTimestamp - now;
+
+    if (diff <= 0) {
+        timerElem.innerText = "СРОК ИСТЕК (Возврат доступен Приемке)";
+        timerElem.style.color = "#ef4444";
+    } else {
+        const d = Math.floor(diff / (24 * 3600));
+        const h = Math.floor((diff % (24 * 3600)) / 3600);
+        const m = Math.floor((diff % 3600) / 60);
+        const s = diff % 60;
+        timerElem.innerText = `${d}д ${h}ч ${m}м ${s}с`;
+    }
+}, 1000);
+
+async function loadCurrentPayees() {
     try {
-        log("Подтвердите пополнение (USDT + 2000 TRX) на карте Tangem...");
-        const tx = await escrowContract.depositAndLock({
-            value: CONFIG.trxRequiredSun // 2000 TRX в SUN
-        });
-        log(`Транзакция пополнения отправлена: ${tx.hash}`);
-        await tx.wait();
-        log("Депозит заблокирован в смарт-контракте!", "success");
-        await updateDashboardData();
+        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
+        for (let i = 0; i < 4; i++) {
+            const payee = await contract.payees(i).call();
+            const inputElem = document.getElementById(`payee${i}`);
+            if (inputElem && payee.wallet) {
+                inputElem.value = tronWebInstance.address.fromHex(payee.wallet);
+            }
+        }
     } catch (err) {
-        log(`Ошибка при внесении депозита: ${err.message || err}`, "error");
+        console.error("Ошибка загрузки адресов:", err);
+    }
+}
+
+// Генерация подписей
+async function generateSignature(roleTag) {
+    if (!userAddress || !tronWebInstance) return alert("Подключите кошелек!");
+    try {
+        const timestamp = Math.floor(Date.now() / 1000);
+        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
+        const nonce = await contract.nonce().call();
+
+        const messageHash = tronWebInstance.sha3(
+            tronWebInstance.address.toHex(CONTRACT_ADDRESS) +
+            CHAIN_ID.toString(16).padStart(64, '0') +
+            tronWebInstance.toHex(roleTag).replace('0x', '') +
+            timestamp.toString(16).padStart(64, '0') +
+            BigInt(nonce).toString(16).padStart(64, '0')
+        );
+
+        const signature = await tronWebInstance.trx.sign(messageHash);
+        return { timestamp, signature };
+    } catch (err) {
+        alert("Ошибка создания подписи: " + err.message);
+        return null;
+    }
+}
+
+document.getElementById('btnSignInvestor').addEventListener('click', async () => {
+    const res = await generateSignature("STAGE_2_INVESTOR");
+    if (res) {
+        document.getElementById('timeA').value = res.timestamp;
+        document.getElementById('sigA').value = res.signature;
+    }
+});
+
+document.getElementById('btnSignOperator').addEventListener('click', async () => {
+    const res = await generateSignature("STAGE_2_OPERATOR");
+    if (res) {
+        document.getElementById('timeB').value = res.timestamp;
+        document.getElementById('sigB').value = res.signature;
+    }
+});
+
+document.getElementById('btnSignOracle').addEventListener('click', async () => {
+    const res = await generateSignature("STAGE_2_ORACLE");
+    if (res) {
+        document.getElementById('timeOracle').value = res.timestamp;
+        document.getElementById('sigOracle').value = res.signature;
+    }
+});
+
+// Исполнение Stage 2
+document.getElementById('btnExecuteStage2').addEventListener('click', async () => {
+    try {
+        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
+        const tx = await contract.executeStage2AndDistribute(
+            document.getElementById('timeA').value,
+            document.getElementById('timeB').value,
+            document.getElementById('timeOracle').value,
+            document.getElementById('sigA').value,
+            document.getElementById('sigB').value,
+            document.getElementById('sigOracle').value
+        ).send({ feeLimit: 300000000 });
+
+        txStatusLabel.innerText = "Выплаты выполнены! Tx: " + tx;
+        await loadFullAuditTrailWithFailures();
+    } catch (err) {
+        txStatusLabel.innerText = "Ошибка: " + err.message;
+    }
+});
+
+// Обновление кошельков
+document.getElementById('btnUpdateWallets').addEventListener('click', async () => {
+    try {
+        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
+        const wallets = [
+            document.getElementById('payee0').value,
+            document.getElementById('payee1').value,
+            document.getElementById('payee2').value,
+            document.getElementById('payee3').value
+        ];
+        const timeA = document.getElementById('timeA').value || Math.floor(Date.now() / 1000);
+        const tx = await contract.updateConfigWithTripleSig(
+            wallets,
+            [500, 350, 150, 100],
+            timeA, timeA, timeA,
+            document.getElementById('sigA').value,
+            document.getElementById('sigB').value,
+            document.getElementById('sigOracle').value
+        ).send({ feeLimit: 150000000 });
+
+        txStatusLabel.innerText = "Кошельки обновлены! Tx: " + tx;
+        await loadFullAuditTrailWithFailures();
+    } catch (err) {
+        txStatusLabel.innerText = "Ошибка обновления: " + err.message;
+    }
+});
+
+// Аварийный возврат
+document.getElementById('btnTimeoutRefund').addEventListener('click', async () => {
+    try {
+        const contract = await tronWebInstance.contract().at(CONTRACT_ADDRESS);
+        const tx = await contract.emergencyRefundAfterTimeout().send({ feeLimit: 100000000 });
+        txStatusLabel.innerText = "Возврат выполнен Приемке! Tx: " + tx;
+        await loadFullAuditTrailWithFailures();
+    } catch (err) {
+        txStatusLabel.innerText = "Ошибка возврата: " + err.message;
+    }
+});
+
+// Загрузка истории вызовов с Tronscan
+async function loadFullAuditTrailWithFailures() {
+    const tbody = document.getElementById("registryBody");
+    if (!tbody) return;
+
+    try {
+        const base58Contract = tronWebInstance.address.fromHex(CONTRACT_ADDRESS);
+        const response = await fetch(`https://apilist.tronscan.org/api/transaction?sort=-timestamp&limit=25&contract=${base58Contract}`);
+        const data = await response.json();
+
+        if (data && data.data && data.data.length > 0) {
+            tbody.innerHTML = "";
+            data.data.forEach((tx, idx) => {
+                const isSuccess = tx.result === "SUCCESS" || tx.contractRet === "SUCCESS";
+                const statusHtml = isSuccess
+                    ? `<span style="color:#10b981; font-weight:bold;">УСПЕШНО / SUCCESS</span>`
+                    : `<span style="color:#ef4444; font-weight:bold;">ОТКЛОНЕНО / FAILED (${tx.contractRet || 'REVERT'})</span>`;
+
+                const londonTime = new Intl.DateTimeFormat('en-GB', {
+                    timeZone: 'Europe/London',
+                    year: 'numeric', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                }).format(new Date(tx.timestamp));
+
+                tbody.innerHTML += `<tr>
+                    <td>${idx + 1}</td>
+                    <td><strong>${tx.methodName || 'Вызов контракта'}</strong></td>
+                    <td>${statusHtml}</td>
+                    <td class="hash-code"><a href="https://tronscan.org/#/transaction/${tx.hash}" target="_blank" style="color:#60a5fa;">${tx.hash.substring(0, 12)}...</a></td>
+                    <td>${londonTime} (London)</td>
+                </tr>`;
+            });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Транзакции отсутствуют</td></tr>';
+        }
+    } catch (err) {
+        console.error("Ошибка загрузки публичной истории Tronscan:", err);
     }
 }
