@@ -68,13 +68,10 @@ async function refreshState() {
   if (!escrowContract) return;
 
   try {
-    // 1. Приведение вызова isDepositLocked() к строгому Boolean
+    // 1. Чтение статуса блокировки депозита
     const rawLocked = await escrowContract.isDepositLocked().call();
-    const isLocked = Boolean(
-      rawLocked === true || 
-      rawLocked.toString() === 'true' || 
-      rawLocked.toString() === '1'
-    );
+    const isLockedStr = String(rawLocked?._hex || rawLocked?.toString() || rawLocked);
+    const isLocked = isLockedStr === 'true' || isLockedStr === '1' || rawLocked === true;
 
     const statusBadge = document.getElementById('escrowStatus');
 
@@ -97,16 +94,18 @@ async function refreshState() {
       }
     }
 
-    // 2. Загрузка требуемого USDT (с делением на 1e6)
+    // 2. Чтение требуемого USDT
     const reqUsdtRaw = await escrowContract.getRequiredUsdtDeposit().call();
-    const reqUsdtFormatted = (Number(reqUsdtRaw) / 1e6).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    const reqUsdtVal = window.tronWeb.BigNumber(reqUsdtRaw._hex || reqUsdtRaw).toNumber();
+    const reqUsdtFormatted = (reqUsdtVal / 1e6).toLocaleString('en-US', { maximumFractionDigits: 2 });
     
     const reqUsdtEl = document.getElementById('requiredUsdtDisplay');
     if (reqUsdtEl) reqUsdtEl.innerText = reqUsdtFormatted + ' USDT';
 
-    // 3. Загрузка курса Оракула
+    // 3. Чтение курса Оракула (исправление нулевого курса)
     const rateRaw = await escrowContract.fixedEurUsdtRate().call();
-    const rateFormatted = (Number(rateRaw) / 1e6).toFixed(4);
+    const rateVal = window.tronWeb.BigNumber(rateRaw._hex || rateRaw).toNumber();
+    const rateFormatted = (rateVal / 1e6).toFixed(4);
     
     const rateEl = document.getElementById('oracleRateDisplay');
     if (rateEl) rateEl.innerText = `1 EUR = ${rateFormatted} USDT`;
@@ -149,7 +148,9 @@ async function handleDeposit() {
     
     addAuditLog(currentAccount, `Депозит заблокирован в контракте! TX: ${tx}`);
     alert("Депозит успешно зафиксирован!");
-    await refreshState();
+    
+    // Пауза 3 сек для майнинга блока перед обновлением
+    setTimeout(refreshState, 3000);
   } catch (err) {
     const msg = err?.message || err || "Транзакция отклонена пользователем";
     addAuditLog(currentAccount, `Ошибка депозита: ${msg}`);
@@ -173,7 +174,7 @@ function handleSign(role) {
   }
 }
 
-// --- Инициализация событий при загрузке DOM ---
+// --- Инициализация событий ---
 document.addEventListener('DOMContentLoaded', () => {
   const btnConnectTL = document.getElementById('connectTronLinkBtn');
   const btnApprove = document.getElementById('actionUsdtBtn');
@@ -191,7 +192,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnOrc) btnOrc.addEventListener('click', () => handleSign('Oracle'));
   if (btnRec) btnRec.addEventListener('click', () => handleSign('Receiver'));
 
-  // Автоподключение и опрос при открытии страницы
+  // Периодическое автоматическое обновление статусов каждые 5 секунд
+  setInterval(() => {
+    if (window.tronWeb && window.tronWeb.ready && escrowContract) {
+      refreshState();
+    }
+  }, 5000);
+
+  // Автоподключение при старте
   setTimeout(() => {
     if (window.tronWeb && window.tronWeb.ready) {
       connectTronLink();
