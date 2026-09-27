@@ -1,7 +1,10 @@
 // TRON Base58 адрес развернутого контракта в сети Shasta Testnet
 const CONTRACT_ADDRESS_BASE58 = "TLEHBvmyqueaBJErZfe2QWw8qLwKEaEe8A";
-// EVM Hex эквивалент контракта (используется для генерации хэшей подписи)
+// EVM Hex эквивалент контракта (используется для генерации keccak256 хэшей подписи)
 const CONTRACT_ADDRESS_HEX = "0x708afe235a9b4e7616dbdb0e74c7d239b1a130f2";
+
+// Адрес контракта USDT TRC-20 в сети Shasta Testnet
+const USDT_CONTRACT_ADDRESS_BASE58 = "TG3XXySZAu2mYsRcuAJHdp25ebdMow5vhR";
 const CHAIN_ID = 728126428;
 
 const CONTRACT_ABI = [
@@ -87,6 +90,26 @@ const CONTRACT_ABI = [
   }
 ];
 
+const TRC20_ABI = [
+  {
+    "inputs": [
+      {"name": "_spender", "type": "address"},
+      {"name": "_value", "type": "uint256"}
+    ],
+    "name": "approve",
+    "outputs": [{"name": "success", "type": "bool"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{"name": "_owner", "type": "address"}],
+    "name": "balanceOf",
+    "outputs": [{"name": "balance", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
+
 let contract;
 let userAddress;
 
@@ -95,6 +118,7 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("showQrBtn").addEventListener("click", toggleQrModal);
   document.getElementById("closeQrBtn").addEventListener("click", toggleQrModal);
   
+  document.getElementById("approveUsdtBtn").addEventListener("click", approveUsdt);
   document.getElementById("depositBtn").addEventListener("click", depositAndLock);
   document.getElementById("signStage1MsgBtn").addEventListener("click", signStage1Local);
   document.getElementById("execStage1Btn").addEventListener("click", executeStage1);
@@ -103,7 +127,6 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("withdrawLockTimeoutBtn").addEventListener("click", withdrawAfterLockTimeout);
   document.getElementById("emergencyRefundBtn").addEventListener("click", emergencyRefund);
 
-  // Автоподключение при открытии, если TronLink уже разблокирован
   setTimeout(connectWallet, 500);
 });
 
@@ -117,17 +140,16 @@ async function connectWallet() {
         document.getElementById("userAddress").innerText = userAddress;
         document.getElementById("networkChainId").innerText = "TRON Shasta Testnet";
 
-        // Подключаем контракт через нативный TronWeb API
         contract = await window.tronWeb.contract(CONTRACT_ABI, CONTRACT_ADDRESS_BASE58);
 
         updateQrCode(userAddress);
         await updateContractState();
       } else {
-        alert("Пожалуйста, подпишите запрос на подключение в расширении TronLink.");
+        alert("Подтвердите авторизацию в расширении TronLink.");
       }
     } catch (err) {
       console.error(err);
-      alert("Ошибка автоподключения TronLink: " + err.message);
+      alert("Ошибка подключения TronLink: " + err.message);
     }
   } else if (window.tronWeb && window.tronWeb.defaultAddress.base58) {
     userAddress = window.tronWeb.defaultAddress.base58;
@@ -138,7 +160,7 @@ async function connectWallet() {
     updateQrCode(userAddress);
     await updateContractState();
   } else {
-    alert("Расширение TronLink не обнаружено! Пожалуйста, установите TronLink.");
+    alert("Установите и войдите в расширение TronLink!");
   }
 }
 
@@ -182,23 +204,37 @@ async function updateContractState() {
     document.getElementById("statusStage1").innerText = isStage1 ? "Пройден" : "Нет";
     document.getElementById("statusStage2").innerText = isStage2 ? "Активирован" : "Нет";
   } catch (err) {
-    console.error("Ошибка чтения состояния контракта через TronWeb:", err);
+    console.error("Ошибка чтения состояния контракта:", err);
+  }
+}
+
+async function approveUsdt() {
+  if (!window.tronWeb) return alert("Подключите TronLink!");
+
+  try {
+    const usdtAmount = document.getElementById("usdtDepositInput").value;
+    const usdtContract = await window.tronWeb.contract(TRC20_ABI, USDT_CONTRACT_ADDRESS_BASE58);
+
+    const txHash = await usdtContract.approve(CONTRACT_ADDRESS_BASE58, usdtAmount).send();
+    alert("Разрешение (Approve) успешно получено! TxHash: " + txHash);
+  } catch (err) {
+    console.error(err);
+    alert("Ошибка Approve USDT: " + (err.message || err));
   }
 }
 
 async function depositAndLock() {
-  if (!contract) return alert("Сначала подключите кошелек!");
+  if (!contract) return alert("Подключите кошелек!");
   
   try {
     const usdtAmount = document.getElementById("usdtDepositInput").value;
-    const trxAmount = document.getElementById("trxDepositInput").value; // 2000000000 SUN
+    const trxAmount = document.getElementById("trxDepositInput").value; // 2000000000 SUN = 2,000 TRX
 
-    // Вызов с передачей нативного TRX через параметр callValue (в SUN)
     const txHash = await contract.depositAndLock(usdtAmount).send({
       callValue: trxAmount
     });
 
-    alert("Депозит успешно отправлен! TxHash: " + txHash);
+    alert("Депозит успешно внесен! TxHash: " + txHash);
     await updateContractState();
   } catch (err) {
     console.error(err);
@@ -221,13 +257,11 @@ async function signStage1Local() {
 
     const timestamp = Math.floor(Date.now() / 1000);
 
-    // Вычисление Keccak256 хэша
     const messageHash = ethers.utils.solidityKeccak256(
       ["address", "uint256", "string", "bytes32", "uint256", "uint256"],
       [CONTRACT_ADDRESS_HEX, CHAIN_ID, roleTag, passportHash, timestamp, nonce]
     );
 
-    // Подпись хэша через TronWeb
     const signature = await window.tronWeb.trx.signMessageV2(messageHash);
     
     document.getElementById("generatedSigOutput").value = JSON.stringify({
@@ -236,7 +270,7 @@ async function signStage1Local() {
       signature: signature
     }, null, 2);
 
-    alert(`Подпись для ${roleTag} успешно сформирована!`);
+    alert(`Подпись для ${roleTag} успешно создана!`);
   } catch (err) {
     console.error(err);
     alert("Ошибка генерации подписи: " + (err.message || err));
